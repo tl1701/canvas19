@@ -236,49 +236,88 @@
           return emailRegex.test(email);
         };
 
-        // Parse CSV text into address objects
+        // Parse CSV/TSV text into address objects
         const parseCSVText = (text) => {
           const lines = text.split('\n');
-          const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+          
+          // Detect delimiter (tab or comma)
+          const firstLine = lines[0];
+          const delimiter = firstLine.includes('\t') ? '\t' : ',';
+          
+          const headers = firstLine.split(delimiter).map(h => h.trim().replace(/"/g, ''));
           
           const newAddresses = lines.slice(1).map((line, index) => {
             if (!line.trim()) return null;
             
-            // Handle CSV values that may contain commas within quotes
-            const values = [];
-            let current = '';
-            let inQuotes = false;
+            let values;
             
-            for (let i = 0; i < line.length; i++) {
-              const char = line[i];
-              if (char === '"') {
-                inQuotes = !inQuotes;
-              } else if (char === ',' && !inQuotes) {
-                values.push(current.trim().replace(/"/g, ''));
-                current = '';
-              } else {
-                current += char;
+            if (delimiter === '\t') {
+              // Tab-separated: simple split
+              values = line.split('\t').map(v => v.trim().replace(/"/g, ''));
+            } else {
+              // Comma-separated: handle quotes
+              values = [];
+              let current = '';
+              let inQuotes = false;
+              
+              for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                  inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                  values.push(current.trim().replace(/"/g, ''));
+                  current = '';
+                } else {
+                  current += char;
+                }
               }
+              values.push(current.trim().replace(/"/g, ''));
             }
-            values.push(current.trim().replace(/"/g, ''));
             
             const addressData = {};
             headers.forEach((header, i) => {
               addressData[header] = values[i] || '';
             });
 
+            // Extract latitude/longitude from geometry field if present
+            let latitude = addressData.LATITUDE || addressData.lat || '';
+            let longitude = addressData.LONGITUDE || addressData.lon || '';
+            
+            if ((!latitude || !longitude) && addressData.geometry) {
+              try {
+                // Parse geometry JSON like: {"coordinates": [[-79.317, 43.680]], "type": "MultiPoint"}
+                const geom = JSON.parse(addressData.geometry);
+                if (geom.coordinates && geom.coordinates[0]) {
+                  // Coordinates are [longitude, latitude] in GeoJSON
+                  const coords = geom.coordinates[0];
+                  if (Array.isArray(coords)) {
+                    longitude = coords[0];
+                    latitude = coords[1];
+                  }
+                }
+              } catch (e) {
+                // If JSON parsing fails, try regex as fallback
+                const coordMatch = addressData.geometry.match(/\[?\[?(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]?\]?/);
+                if (coordMatch) {
+                  longitude = coordMatch[1];
+                  latitude = coordMatch[2];
+                }
+              }
+            }
+
             return {
               id: generateId(),
               streetNumber: addressData.ADDRESS || addressData.ADDRESS_NUMBER || '',
               streetName: addressData.STREET_NAME || addressData.LINEAR_NAME_FULL || '',
-              city: addressData.MUNICIPALITY || 'Toronto',
+              city: addressData.MUNICIPALITY_NAME || addressData.MUNICIPALITY || 'Toronto',
               postalCode: addressData.POSTAL_CODE || '',
-              latitude: addressData.LATITUDE || addressData.lat || '',
-              longitude: addressData.LONGITUDE || addressData.lon || '',
+              latitude: latitude,
+              longitude: longitude,
               ward: addressData.WARD || '19',
+              fullAddress: addressData.ADDRESS_FULL || '',
               ...addressData
             };
-          }).filter(addr => addr !== null);
+          }).filter(addr => addr !== null && addr.streetNumber);
 
           return newAddresses;
         };
