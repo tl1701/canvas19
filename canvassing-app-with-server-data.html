@@ -1,0 +1,1761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ward 19 Canvassing App - With Map</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS and JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet MarkerCluster for grouping nearby pins -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    
+    <style>
+        /* Custom scrollbar for better UX */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        /* Map container styling */
+        #map {
+            height: 100%;
+            width: 100%;
+            z-index: 0;
+        }
+        
+        /* Ensure map controls are clickable */
+        .leaflet-control-container {
+            z-index: 1000;
+        }
+        
+        /* Custom marker colors */
+        .marker-not-contacted {
+            filter: hue-rotate(0deg) brightness(1);
+        }
+        .marker-contacted {
+            filter: hue-rotate(120deg) brightness(0.9);
+        }
+        .marker-not-home {
+            filter: hue-rotate(45deg) brightness(1.1);
+        }
+        .marker-refused {
+            filter: hue-rotate(0deg) brightness(0.7) saturate(1.5);
+        }
+        .marker-moved {
+            filter: grayscale(1) brightness(0.8);
+        }
+        
+        /* Loading spinner */
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        // =====================================================
+        // CONFIGURATION - Set your data server URL here
+        // =====================================================
+        const DEFAULT_DATA_URL = './addresses.csv';  // Change this to your server endpoint
+        // Examples:
+        // './addresses.csv'                          - Local file in same directory
+        // 'https://yourserver.com/api/addresses.csv' - Remote server
+        // 'https://yourserver.com/api/addresses'     - API endpoint returning CSV
+        // =====================================================
+        
+        // Icon components (simplified SVG icons)
+        const MapPin = ({ size = 24, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+            </svg>
+        );
+        
+        const List = ({ size = 24, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="8" x2="21" y1="6" y2="6"/>
+                <line x1="8" x2="21" y1="12" y2="12"/>
+                <line x1="8" x2="21" y1="18" y2="18"/>
+                <line x1="3" x2="3.01" y1="6" y2="6"/>
+                <line x1="3" x2="3.01" y1="12" y2="12"/>
+                <line x1="3" x2="3.01" y1="18" y2="18"/>
+            </svg>
+        );
+        
+        const BarChart3 = ({ size = 24, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect width="18" height="18" x="3" y="3" rx="2"/>
+                <path d="M3 9h18"/>
+                <path d="M9 21V9"/>
+            </svg>
+        );
+        
+        const Settings = ({ size = 24, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.08a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.08a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73v.18a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.08a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73v-.18a2 2 0 00-2-2z"/>
+                <circle cx="12" cy="12" r="3"/>
+            </svg>
+        );
+        
+        const Download = ({ size = 20, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" x2="12" y1="15" y2="3"/>
+            </svg>
+        );
+        
+        const LogOut = ({ size = 16, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" x2="9" y1="12" y2="12"/>
+            </svg>
+        );
+        
+        const Plus = ({ size = 20, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" x2="12" y1="5" y2="19"/>
+                <line x1="5" x2="19" y1="12" y2="12"/>
+            </svg>
+        );
+        
+        const Trash2 = ({ size = 16, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+            </svg>
+        );
+        
+        const X = ({ size = 24, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" x2="6" y1="6" y2="18"/>
+                <line x1="6" x2="18" y1="6" y2="18"/>
+            </svg>
+        );
+
+        const Home = ({ size = 24, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+        );
+
+        const CheckCircle = ({ size = 24, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+        );
+
+        const Navigation = ({ size = 20, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+            </svg>
+        );
+
+        const Crosshair = ({ size = 20, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="22" x2="18" y1="12" y2="12"/>
+                <line x1="6" x2="2" y1="12" y2="12"/>
+                <line x1="12" x2="12" y1="6" y2="2"/>
+                <line x1="12" x2="12" y1="22" y2="18"/>
+            </svg>
+        );
+        
+        const RefreshCw = ({ size = 20, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+            </svg>
+        );
+        
+        const Cloud = ({ size = 20, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/>
+            </svg>
+        );
+        
+        const AlertCircle = ({ size = 20, className = "" }) => (
+            <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" x2="12" y1="8" y2="12"/>
+                <line x1="12" x2="12.01" y1="16" y2="16"/>
+            </svg>
+        );
+        
+        // Utility functions
+        const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        const formatPhoneNumber = (value) => {
+          const phoneNumber = value.replace(/\D/g, '');
+          if (phoneNumber.length === 0) return '';
+          if (phoneNumber.length <= 3) return `(${phoneNumber}`;
+          if (phoneNumber.length <= 6) return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3)}`;
+          if (phoneNumber.length <= 10) return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6)}`;
+          return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`;
+        };
+
+        const validateEmail = (email) => {
+          if (!email) return true;
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          return emailRegex.test(email);
+        };
+
+        // Parse CSV text into address objects
+        const parseCSVText = (text) => {
+          const lines = text.split('\n');
+          const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+          
+          const newAddresses = lines.slice(1).map((line, index) => {
+            if (!line.trim()) return null;
+            
+            // Handle CSV values that may contain commas within quotes
+            const values = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+              const char = line[i];
+              if (char === '"') {
+                inQuotes = !inQuotes;
+              } else if (char === ',' && !inQuotes) {
+                values.push(current.trim().replace(/"/g, ''));
+                current = '';
+              } else {
+                current += char;
+              }
+            }
+            values.push(current.trim().replace(/"/g, ''));
+            
+            const addressData = {};
+            headers.forEach((header, i) => {
+              addressData[header] = values[i] || '';
+            });
+
+            return {
+              id: generateId(),
+              streetNumber: addressData.ADDRESS || addressData.ADDRESS_NUMBER || '',
+              streetName: addressData.STREET_NAME || addressData.LINEAR_NAME_FULL || '',
+              city: addressData.MUNICIPALITY || 'Toronto',
+              postalCode: addressData.POSTAL_CODE || '',
+              latitude: addressData.LATITUDE || addressData.lat || '',
+              longitude: addressData.LONGITUDE || addressData.lon || '',
+              ward: addressData.WARD || '19',
+              ...addressData
+            };
+          }).filter(addr => addr !== null);
+
+          return newAddresses;
+        };
+
+        // Get marker color based on status
+        const getMarkerColor = (status) => {
+          switch(status) {
+            case 'contacted': return '#22c55e'; // green
+            case 'not-home': return '#f59e0b'; // amber
+            case 'refused': return '#ef4444'; // red
+            case 'moved': return '#6b7280'; // gray
+            default: return '#3b82f6'; // blue (not contacted)
+          }
+        };
+
+        // Create custom marker icon
+        const createMarkerIcon = (status) => {
+          const color = getMarkerColor(status);
+          const svgIcon = `
+            <svg width="25" height="41" viewBox="0 0 25 41" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12.5 0C5.596 0 0 5.596 0 12.5c0 9.375 12.5 28.5 12.5 28.5S25 21.875 25 12.5C25 5.596 19.404 0 12.5 0z" 
+                    fill="${color}" stroke="#fff" stroke-width="2"/>
+              <circle cx="12.5" cy="12.5" r="4" fill="#fff"/>
+            </svg>
+          `;
+          return L.divIcon({
+            html: svgIcon,
+            className: 'custom-marker',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [0, -41]
+          });
+        };
+
+        // Map Component
+        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress }) => {
+          const mapRef = useRef(null);
+          const mapInstanceRef = useRef(null);
+          const markersLayerRef = useRef(null);
+
+          useEffect(() => {
+            if (!mapRef.current || mapInstanceRef.current) return;
+
+            // Initialize map centered on Ward 19, Toronto
+            const map = L.map(mapRef.current, {
+              center: [43.6532, -79.3832], // Toronto coordinates
+              zoom: 13,
+              zoomControl: true
+            });
+
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '© OpenStreetMap contributors',
+              maxZoom: 19
+            }).addTo(map);
+
+            mapInstanceRef.current = map;
+
+            // Add locate control
+            const locateButton = L.control({position: 'topright'});
+            locateButton.onAdd = function() {
+              const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+              div.innerHTML = '<button style="width: 30px; height: 30px; background: white; border: none; cursor: pointer; font-size: 18px;" title="Show my location">📍</button>';
+              div.onclick = function() {
+                map.locate({setView: true, maxZoom: 16});
+              };
+              return div;
+            };
+            locateButton.addTo(map);
+
+            // Handle location found
+            map.on('locationfound', function(e) {
+              L.circle(e.latlng, {
+                radius: e.accuracy / 2,
+                color: '#3b82f6',
+                fillColor: '#3b82f6',
+                fillOpacity: 0.2
+              }).addTo(map);
+              
+              L.marker(e.latlng, {
+                icon: L.divIcon({
+                  html: '<div style="background: #3b82f6; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>',
+                  className: 'current-location-marker',
+                  iconSize: [12, 12]
+                })
+              }).addTo(map).bindPopup('You are here').openPopup();
+            });
+
+            return () => {
+              if (mapInstanceRef.current) {
+                mapInstanceRef.current.remove();
+                mapInstanceRef.current = null;
+              }
+            };
+          }, []);
+
+          useEffect(() => {
+            if (!mapInstanceRef.current || !addresses.length) return;
+
+            // Clear existing markers
+            if (markersLayerRef.current) {
+              mapInstanceRef.current.removeLayer(markersLayerRef.current);
+            }
+
+            // Create marker cluster group
+            const markers = L.markerClusterGroup({
+              maxClusterRadius: 50,
+              spiderfyOnMaxZoom: true,
+              showCoverageOnHover: false,
+              zoomToBoundsOnClick: true
+            });
+
+            const bounds = [];
+
+            addresses.forEach(address => {
+              if (!address.latitude || !address.longitude) return;
+
+              const lat = parseFloat(address.latitude);
+              const lng = parseFloat(address.longitude);
+              
+              if (isNaN(lat) || isNaN(lng)) return;
+
+              bounds.push([lat, lng]);
+
+              // Get contact status for this address
+              const addressContacts = contacts.filter(c => c.addressId === address.id);
+              const status = addressContacts.length > 0 
+                ? addressContacts[0].status 
+                : 'not-contacted';
+
+              const marker = L.marker([lat, lng], {
+                icon: createMarkerIcon(status)
+              });
+
+              // Create popup content
+              const contactCount = addressContacts.length;
+              const popupContent = `
+                <div style="min-width: 150px;">
+                  <strong>${address.streetNumber} ${address.streetName}</strong><br/>
+                  <span style="font-size: 12px; color: #666;">${address.city || 'Toronto'}</span><br/>
+                  <span style="font-size: 12px; margin-top: 4px; display: block;">
+                    ${contactCount > 0 ? `${contactCount} contact${contactCount > 1 ? 's' : ''}` : 'Not contacted'}
+                  </span>
+                  <button 
+                    onclick="window.handleMarkerClick('${address.id}')"
+                    style="
+                      margin-top: 8px;
+                      background: #3b82f6;
+                      color: white;
+                      border: none;
+                      padding: 6px 12px;
+                      border-radius: 4px;
+                      cursor: pointer;
+                      font-size: 12px;
+                      width: 100%;
+                    "
+                  >
+                    ${contactCount > 0 ? 'View Details' : 'Add Contact'}
+                  </button>
+                </div>
+              `;
+
+              marker.bindPopup(popupContent);
+              markers.addLayer(marker);
+            });
+
+            markersLayerRef.current = markers;
+            mapInstanceRef.current.addLayer(markers);
+
+            // Fit map to show all markers if we have bounds
+            if (bounds.length > 0) {
+              mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+            }
+          }, [addresses, contacts]);
+
+          // Make marker click handler available globally
+          useEffect(() => {
+            window.handleMarkerClick = (addressId) => {
+              const address = addresses.find(a => a.id === addressId);
+              if (address) {
+                onAddressClick(address);
+              }
+            };
+
+            return () => {
+              delete window.handleMarkerClick;
+            };
+          }, [addresses, onAddressClick]);
+
+          return <div ref={mapRef} id="map" className="w-full h-full" />;
+        };
+
+        // Main Canvassing App Component
+        const CanvassingApp = () => {
+          const [currentUser, setCurrentUser] = useState(null);
+          const [username, setUsername] = useState('');
+          const [password, setPassword] = useState('');
+          const [view, setView] = useState('map');
+          const [addresses, setAddresses] = useState([]);
+          const [contacts, setContacts] = useState([]);
+          const [selectedAddress, setSelectedAddress] = useState(null);
+          const [showContactForm, setShowContactForm] = useState(false);
+          const [issues, setIssues] = useState([
+            'Housing', 'Transit', 'Environment', 'Taxes', 'Safety', 
+            'Development', 'Parks', 'Healthcare', 'Bike Lanes', 'Traffic', 'Other'
+          ]);
+          const [sortBy, setSortBy] = useState('street');
+          const [filterStatus, setFilterStatus] = useState('all');
+          const [filterCombination, setFilterCombination] = useState('any');
+          const [selectedIssues, setSelectedIssues] = useState([]);
+          const [contactForm, setContactForm] = useState({
+            name: '',
+            email: '',
+            phone: '',
+            supportLevel: '',
+            issues: [],
+            notes: '',
+            yardSign: false,
+            volunteerInterest: false,
+            literatureDropped: false,
+            literatureType: '',
+            consented: false,
+            status: ''
+          });
+          
+          // Server data loading state
+          const [dataUrl, setDataUrl] = useState(DEFAULT_DATA_URL);
+          const [isLoading, setIsLoading] = useState(false);
+          const [loadError, setLoadError] = useState(null);
+          const [lastLoadTime, setLastLoadTime] = useState(null);
+          const [dataSource, setDataSource] = useState('none'); // 'server', 'local', 'none'
+
+          // Function to load addresses from server
+          const loadAddressesFromServer = async (url = dataUrl) => {
+            setIsLoading(true);
+            setLoadError(null);
+            
+            try {
+              const response = await fetch(url);
+              
+              if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+              }
+              
+              const text = await response.text();
+              const newAddresses = parseCSVText(text);
+              
+              if (newAddresses.length === 0) {
+                throw new Error('No valid addresses found in the data');
+              }
+              
+              setAddresses(newAddresses);
+              setLastLoadTime(new Date().toISOString());
+              setDataSource('server');
+              
+              // Save the URL for future use
+              localStorage.setItem('dataUrl', url);
+              localStorage.setItem('addresses', JSON.stringify(newAddresses));
+              localStorage.setItem('dataSource', 'server');
+              localStorage.setItem('lastLoadTime', new Date().toISOString());
+              
+              return { success: true, count: newAddresses.length };
+            } catch (error) {
+              console.error('Error loading addresses from server:', error);
+              setLoadError(error.message);
+              return { success: false, error: error.message };
+            } finally {
+              setIsLoading(false);
+            }
+          };
+
+          // Load data from localStorage on mount, then try server
+          useEffect(() => {
+            const savedUser = localStorage.getItem('currentUser');
+            const savedAddresses = localStorage.getItem('addresses');
+            const savedContacts = localStorage.getItem('contacts');
+            const savedDataUrl = localStorage.getItem('dataUrl');
+            const savedDataSource = localStorage.getItem('dataSource');
+            const savedLastLoadTime = localStorage.getItem('lastLoadTime');
+            
+            if (savedUser) setCurrentUser(JSON.parse(savedUser));
+            if (savedContacts) setContacts(JSON.parse(savedContacts));
+            if (savedDataUrl) setDataUrl(savedDataUrl);
+            if (savedLastLoadTime) setLastLoadTime(savedLastLoadTime);
+            if (savedDataSource) setDataSource(savedDataSource);
+            
+            // Load cached addresses first for immediate display
+            if (savedAddresses) {
+              setAddresses(JSON.parse(savedAddresses));
+            }
+            
+            // Try to load fresh data from server if we have a URL configured
+            // (This will update the data in the background)
+            if (savedDataUrl || DEFAULT_DATA_URL) {
+              const urlToUse = savedDataUrl || DEFAULT_DATA_URL;
+              // Only auto-load if user is logged in or there's no cached data
+              if (savedUser || !savedAddresses) {
+                loadAddressesFromServer(urlToUse);
+              }
+            }
+          }, []);
+
+          // Save to localStorage whenever data changes
+          useEffect(() => {
+            if (addresses.length > 0) {
+              localStorage.setItem('addresses', JSON.stringify(addresses));
+            }
+          }, [addresses]);
+
+          useEffect(() => {
+            if (contacts.length > 0) {
+              localStorage.setItem('contacts', JSON.stringify(contacts));
+            }
+          }, [contacts]);
+
+          const handleLogin = (e) => {
+            e.preventDefault();
+            if (username && password) {
+              const user = { username, loginTime: new Date().toISOString() };
+              setCurrentUser(user);
+              localStorage.setItem('currentUser', JSON.stringify(user));
+              
+              // Load data from server on login if not already loaded
+              if (addresses.length === 0) {
+                loadAddressesFromServer();
+              }
+            }
+          };
+
+          const handleLogout = () => {
+            setCurrentUser(null);
+            localStorage.removeItem('currentUser');
+            setUsername('');
+            setPassword('');
+          };
+
+          const handleFileUpload = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const text = event.target.result;
+              const newAddresses = parseCSVText(text);
+              
+              setAddresses(newAddresses);
+              setDataSource('local');
+              setLastLoadTime(new Date().toISOString());
+              localStorage.setItem('dataSource', 'local');
+              localStorage.setItem('lastLoadTime', new Date().toISOString());
+            };
+            reader.readAsText(file);
+          };
+
+          const handleAddressClick = (address) => {
+            setSelectedAddress(address);
+            setShowContactForm(true);
+            setContactForm({
+              name: '',
+              email: '',
+              phone: '',
+              supportLevel: '',
+              issues: [],
+              notes: '',
+              yardSign: false,
+              volunteerInterest: false,
+              literatureDropped: false,
+              literatureType: '',
+              consented: false,
+              status: ''
+            });
+          };
+
+          const handleSubmitContact = () => {
+            if (!contactForm.status) {
+              alert('Please select a contact status');
+              return;
+            }
+
+            if (contactForm.status === 'contacted' && !contactForm.supportLevel) {
+              alert('Please select a support level for contacted residents');
+              return;
+            }
+
+            if (contactForm.email && !validateEmail(contactForm.email)) {
+              alert('Please enter a valid email address');
+              return;
+            }
+
+            const newContact = {
+              id: generateId(),
+              addressId: selectedAddress.id,
+              address: `${selectedAddress.streetNumber} ${selectedAddress.streetName}`,
+              ...contactForm,
+              timestamp: new Date().toISOString(),
+              canvasser: currentUser.username
+            };
+
+            setContacts([...contacts, newContact]);
+            setShowContactForm(false);
+            setSelectedAddress(null);
+            setContactForm({
+              name: '',
+              email: '',
+              phone: '',
+              supportLevel: '',
+              issues: [],
+              notes: '',
+              yardSign: false,
+              volunteerInterest: false,
+              literatureDropped: false,
+              literatureType: '',
+              consented: false,
+              status: ''
+            });
+          };
+
+          const handleDeleteContact = (contactId) => {
+            if (confirm('Are you sure you want to delete this contact?')) {
+              setContacts(contacts.filter(c => c.id !== contactId));
+            }
+          };
+
+          const exportData = () => {
+            const dataStr = JSON.stringify({ addresses, contacts }, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `canvassing-data-${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+          };
+
+          const getAddressStatus = (addressId) => {
+            const addressContacts = contacts.filter(c => c.addressId === addressId);
+            if (addressContacts.length === 0) return 'not-contacted';
+            return addressContacts[0].status;
+          };
+
+          const getFilteredAndSortedAddresses = () => {
+            let filtered = addresses.filter(addr => {
+              const status = getAddressStatus(addr.id);
+              if (filterStatus !== 'all' && status !== filterStatus) return false;
+              
+              if (selectedIssues.length > 0) {
+                const addressContacts = contacts.filter(c => c.addressId === addr.id);
+                const addressIssues = addressContacts.flatMap(c => c.issues);
+                
+                if (filterCombination === 'all') {
+                  return selectedIssues.every(issue => addressIssues.includes(issue));
+                } else {
+                  return selectedIssues.some(issue => addressIssues.includes(issue));
+                }
+              }
+              
+              return true;
+            });
+
+            filtered.sort((a, b) => {
+              if (sortBy === 'street') {
+                const streetCompare = a.streetName.localeCompare(b.streetName);
+                if (streetCompare !== 0) return streetCompare;
+                return parseInt(a.streetNumber) - parseInt(b.streetNumber);
+              } else if (sortBy === 'status') {
+                return getAddressStatus(a.id).localeCompare(getAddressStatus(b.id));
+              }
+              return 0;
+            });
+
+            return filtered;
+          };
+
+          const stats = {
+            total: addresses.length,
+            contacted: addresses.filter(a => getAddressStatus(a.id) === 'contacted').length,
+            notHome: addresses.filter(a => getAddressStatus(a.id) === 'not-home').length,
+            refused: addresses.filter(a => getAddressStatus(a.id) === 'refused').length,
+            moved: addresses.filter(a => getAddressStatus(a.id) === 'moved').length,
+            notContacted: addresses.filter(a => getAddressStatus(a.id) === 'not-contacted').length,
+          };
+
+          const supportStats = {
+            strongSupport: contacts.filter(c => c.supportLevel === 'strong-support').length,
+            leaningSupport: contacts.filter(c => c.supportLevel === 'leaning-support').length,
+            undecided: contacts.filter(c => c.supportLevel === 'undecided').length,
+            leaningAgainst: contacts.filter(c => c.supportLevel === 'leaning-against').length,
+            strongAgainst: contacts.filter(c => c.supportLevel === 'strong-against').length,
+          };
+
+          if (!currentUser) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+                <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
+                  <div className="text-center mb-8">
+                    <Home size={48} className="mx-auto text-blue-600 mb-4" />
+                    <h1 className="text-3xl font-bold text-gray-800">Ward 19 Canvassing</h1>
+                    <p className="text-gray-600 mt-2">Toronto Municipal Campaign</p>
+                  </div>
+                  
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Username</label>
+                      <input
+                        type="text"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Password</label>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
+                    >
+                      Sign In
+                    </button>
+                  </form>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="h-screen flex flex-col bg-gray-50">
+              {/* Header */}
+              <header className="bg-white shadow-sm border-b flex-shrink-0">
+                <div className="px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <Home size={24} className="text-blue-600" />
+                    <div>
+                      <h1 className="text-xl font-bold text-gray-800">Ward 19 Canvassing</h1>
+                      <p className="text-xs text-gray-500">Logged in as {currentUser.username}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center space-x-2 px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+                  >
+                    <LogOut size={16} />
+                    <span className="text-sm">Logout</span>
+                  </button>
+                </div>
+              </header>
+
+              {/* Navigation */}
+              <nav className="bg-white border-b flex-shrink-0">
+                <div className="flex">
+                  <button
+                    onClick={() => setView('map')}
+                    className={`flex-1 px-4 py-3 flex items-center justify-center space-x-2 ${
+                      view === 'map' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'
+                    }`}
+                  >
+                    <MapPin size={20} />
+                    <span className="font-medium">Map</span>
+                  </button>
+                  <button
+                    onClick={() => setView('list')}
+                    className={`flex-1 px-4 py-3 flex items-center justify-center space-x-2 ${
+                      view === 'list' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'
+                    }`}
+                  >
+                    <List size={20} />
+                    <span className="font-medium">List</span>
+                  </button>
+                  <button
+                    onClick={() => setView('stats')}
+                    className={`flex-1 px-4 py-3 flex items-center justify-center space-x-2 ${
+                      view === 'stats' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'
+                    }`}
+                  >
+                    <BarChart3 size={20} />
+                    <span className="font-medium">Stats</span>
+                  </button>
+                  <button
+                    onClick={() => setView('settings')}
+                    className={`flex-1 px-4 py-3 flex items-center justify-center space-x-2 ${
+                      view === 'settings' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'
+                    }`}
+                  >
+                    <Settings size={20} />
+                    <span className="font-medium">Settings</span>
+                  </button>
+                </div>
+              </nav>
+
+              {/* Main Content */}
+              <main className="flex-1 overflow-hidden">
+                {view === 'map' && (
+                  <div className="h-full relative">
+                    {isLoading && addresses.length === 0 ? (
+                      <div className="h-full flex items-center justify-center bg-gray-100">
+                        <div className="text-center">
+                          <div className="spinner mx-auto mb-4"></div>
+                          <p className="text-gray-600">Loading addresses from server...</p>
+                        </div>
+                      </div>
+                    ) : addresses.length === 0 ? (
+                      <div className="h-full flex items-center justify-center bg-gray-100">
+                        <div className="text-center">
+                          <MapPin size={48} className="mx-auto text-gray-400 mb-4" />
+                          <p className="text-gray-600 mb-4">
+                            {loadError 
+                              ? `Error loading data: ${loadError}` 
+                              : 'No addresses loaded yet'}
+                          </p>
+                          <div className="space-y-2">
+                            <button
+                              onClick={() => loadAddressesFromServer()}
+                              disabled={isLoading}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center space-x-2 mx-auto"
+                            >
+                              {isLoading ? (
+                                <>
+                                  <div className="spinner" style={{width: 16, height: 16, borderWidth: 2}}></div>
+                                  <span>Loading...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw size={16} />
+                                  <span>Retry Loading Data</span>
+                                </>
+                              )}
+                            </button>
+                            <p className="text-sm text-gray-500">or</p>
+                            <button
+                              onClick={() => setView('settings')}
+                              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                            >
+                              Configure Data Source
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <MapView 
+                          addresses={addresses} 
+                          contacts={contacts}
+                          onAddressClick={handleAddressClick}
+                          selectedAddress={selectedAddress}
+                        />
+                        
+                        {/* Loading overlay when refreshing */}
+                        {isLoading && (
+                          <div className="absolute top-4 right-16 bg-white rounded-lg shadow-lg px-3 py-2 text-sm flex items-center space-x-2 z-[1000]">
+                            <div className="spinner" style={{width: 16, height: 16, borderWidth: 2}}></div>
+                            <span>Updating...</span>
+                          </div>
+                        )}
+                        
+                        {/* Legend */}
+                        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 text-sm z-[1000]">
+                          <div className="font-semibold mb-2">Legend</div>
+                          <div className="space-y-1">
+                            <div className="flex items-center space-x-2">
+                              <div className="w-4 h-4 rounded-full" style={{background: '#3b82f6'}}></div>
+                              <span>Not Contacted</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <div className="w-4 h-4 rounded-full" style={{background: '#22c55e'}}></div>
+                              <span>Contacted</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <div className="w-4 h-4 rounded-full" style={{background: '#f59e0b'}}></div>
+                              <span>Not Home</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <div className="w-4 h-4 rounded-full" style={{background: '#ef4444'}}></div>
+                              <span>Refused</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <div className="w-4 h-4 rounded-full" style={{background: '#6b7280'}}></div>
+                              <span>Moved</span>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {view === 'list' && (
+                  <div className="h-full overflow-auto custom-scrollbar p-4">
+                    {isLoading && addresses.length === 0 ? (
+                      <div className="text-center py-12">
+                        <div className="spinner mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading addresses...</p>
+                      </div>
+                    ) : addresses.length === 0 ? (
+                      <div className="text-center py-12">
+                        <List size={48} className="mx-auto text-gray-400 mb-4" />
+                        <p className="text-gray-600">No addresses loaded</p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Filters */}
+                        <div className="bg-white rounded-lg shadow-sm p-4 mb-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium mb-2">Sort By</label>
+                              <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                className="w-full px-3 py-2 border rounded-lg"
+                              >
+                                <option value="street">Street Name</option>
+                                <option value="status">Contact Status</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium mb-2">Filter by Status</label>
+                              <select
+                                value={filterStatus}
+                                onChange={(e) => setFilterStatus(e.target.value)}
+                                className="w-full px-3 py-2 border rounded-lg"
+                              >
+                                <option value="all">All</option>
+                                <option value="not-contacted">Not Contacted</option>
+                                <option value="contacted">Contacted</option>
+                                <option value="not-home">Not Home</option>
+                                <option value="refused">Refused</option>
+                                <option value="moved">Moved</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Issue Filter */}
+                          <div className="mt-4">
+                            <label className="block text-sm font-medium mb-2">Filter by Issues</label>
+                            <div className="flex flex-wrap gap-2 mb-2">
+                              {issues.map(issue => (
+                                <button
+                                  key={issue}
+                                  onClick={() => {
+                                    setSelectedIssues(prev => 
+                                      prev.includes(issue) 
+                                        ? prev.filter(i => i !== issue)
+                                        : [...prev, issue]
+                                    );
+                                  }}
+                                  className={`px-3 py-1 rounded-full text-sm ${
+                                    selectedIssues.includes(issue)
+                                      ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                                      : 'bg-gray-100 border-2 border-transparent'
+                                  }`}
+                                >
+                                  {issue}
+                                </button>
+                              ))}
+                            </div>
+                            {selectedIssues.length > 0 && (
+                              <div className="flex items-center space-x-2">
+                                <span className="text-sm text-gray-600">Match:</span>
+                                <button
+                                  onClick={() => setFilterCombination('any')}
+                                  className={`px-3 py-1 text-sm rounded ${
+                                    filterCombination === 'any' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100'
+                                  }`}
+                                >
+                                  Any
+                                </button>
+                                <button
+                                  onClick={() => setFilterCombination('all')}
+                                  className={`px-3 py-1 text-sm rounded ${
+                                    filterCombination === 'all' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100'
+                                  }`}
+                                >
+                                  All
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Address List */}
+                        <div className="space-y-2">
+                          {getFilteredAndSortedAddresses().map(address => {
+                            const addressContacts = contacts.filter(c => c.addressId === address.id);
+                            const status = getAddressStatus(address.id);
+                            const statusColors = {
+                              'contacted': 'bg-green-100 text-green-800',
+                              'not-home': 'bg-amber-100 text-amber-800',
+                              'refused': 'bg-red-100 text-red-800',
+                              'moved': 'bg-gray-100 text-gray-800',
+                              'not-contacted': 'bg-blue-100 text-blue-800'
+                            };
+
+                            return (
+                              <div key={address.id} className="bg-white rounded-lg shadow-sm p-4">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div>
+                                    <h3 className="font-semibold text-lg">
+                                      {address.streetNumber} {address.streetName}
+                                    </h3>
+                                    <p className="text-sm text-gray-600">{address.city}</p>
+                                  </div>
+                                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[status]}`}>
+                                    {status.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                                  </span>
+                                </div>
+
+                                {addressContacts.length > 0 && (
+                                  <div className="mt-3 space-y-2 border-t pt-3">
+                                    {addressContacts.map(contact => (
+                                      <div key={contact.id} className="bg-gray-50 rounded p-3">
+                                        <div className="flex justify-between items-start mb-2">
+                                          <div>
+                                            {contact.name && <p className="font-medium">{contact.name}</p>}
+                                            {contact.supportLevel && (
+                                              <span className="text-xs text-gray-600">
+                                                {contact.supportLevel.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <button
+                                            onClick={() => handleDeleteContact(contact.id)}
+                                            className="text-red-600 hover:text-red-800"
+                                          >
+                                            <Trash2 size={16} />
+                                          </button>
+                                        </div>
+                                        {contact.issues.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-2">
+                                            {contact.issues.map(issue => (
+                                              <span key={issue} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                                                {issue}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                        {contact.notes && (
+                                          <p className="text-sm text-gray-600 mt-2">{contact.notes}</p>
+                                        )}
+                                        <p className="text-xs text-gray-400 mt-2">
+                                          By {contact.canvasser} • {new Date(contact.timestamp).toLocaleString()}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <button
+                                  onClick={() => handleAddressClick(address)}
+                                  className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2"
+                                >
+                                  <Plus size={20} />
+                                  <span>Add Contact</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {view === 'stats' && (
+                  <div className="h-full overflow-auto custom-scrollbar p-4">
+                    <div className="max-w-4xl mx-auto space-y-6">
+                      {/* Overview Stats */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4">Canvassing Progress</h2>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          <div className="text-center p-4 bg-gray-50 rounded-lg">
+                            <div className="text-3xl font-bold text-gray-800">{stats.total}</div>
+                            <div className="text-sm text-gray-600">Total Addresses</div>
+                          </div>
+                          <div className="text-center p-4 bg-green-50 rounded-lg">
+                            <div className="text-3xl font-bold text-green-600">{stats.contacted}</div>
+                            <div className="text-sm text-gray-600">Contacted</div>
+                          </div>
+                          <div className="text-center p-4 bg-amber-50 rounded-lg">
+                            <div className="text-3xl font-bold text-amber-600">{stats.notHome}</div>
+                            <div className="text-sm text-gray-600">Not Home</div>
+                          </div>
+                          <div className="text-center p-4 bg-red-50 rounded-lg">
+                            <div className="text-3xl font-bold text-red-600">{stats.refused}</div>
+                            <div className="text-sm text-gray-600">Refused</div>
+                          </div>
+                          <div className="text-center p-4 bg-gray-50 rounded-lg">
+                            <div className="text-3xl font-bold text-gray-600">{stats.moved}</div>
+                            <div className="text-sm text-gray-600">Moved</div>
+                          </div>
+                          <div className="text-center p-4 bg-blue-50 rounded-lg">
+                            <div className="text-3xl font-bold text-blue-600">{stats.notContacted}</div>
+                            <div className="text-sm text-gray-600">Not Contacted</div>
+                          </div>
+                        </div>
+                        
+                        {stats.total > 0 && (
+                          <div className="mt-6">
+                            <div className="flex justify-between text-sm text-gray-600 mb-2">
+                              <span>Progress</span>
+                              <span>{Math.round((stats.total - stats.notContacted) / stats.total * 100)}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-3">
+                              <div
+                                className="bg-blue-600 h-3 rounded-full transition-all"
+                                style={{ width: `${(stats.total - stats.notContacted) / stats.total * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Support Levels */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4">Support Levels</h2>
+                        <div className="space-y-3">
+                          {[
+                            { key: 'strongSupport', label: 'Strong Support', color: 'bg-green-500' },
+                            { key: 'leaningSupport', label: 'Leaning Support', color: 'bg-green-300' },
+                            { key: 'undecided', label: 'Undecided', color: 'bg-yellow-300' },
+                            { key: 'leaningAgainst', label: 'Leaning Against', color: 'bg-red-300' },
+                            { key: 'strongAgainst', label: 'Strong Against', color: 'bg-red-500' }
+                          ].map(({ key, label, color }) => (
+                            <div key={key}>
+                              <div className="flex justify-between text-sm mb-1">
+                                <span>{label}</span>
+                                <span className="font-medium">{supportStats[key]}</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div
+                                  className={`${color} h-2 rounded-full transition-all`}
+                                  style={{ 
+                                    width: contacts.length > 0 
+                                      ? `${(supportStats[key] / contacts.length) * 100}%` 
+                                      : '0%' 
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Top Issues */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4">Top Issues</h2>
+                        <div className="space-y-3">
+                          {issues.map(issue => {
+                            const count = contacts.filter(c => c.issues.includes(issue)).length;
+                            return count > 0 ? (
+                              <div key={issue}>
+                                <div className="flex justify-between text-sm mb-1">
+                                  <span>{issue}</span>
+                                  <span className="font-medium">{count}</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className="bg-blue-500 h-2 rounded-full transition-all"
+                                    style={{ 
+                                      width: contacts.length > 0 
+                                        ? `${(count / contacts.length) * 100}%` 
+                                        : '0%' 
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Engagement Metrics */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4">Engagement Metrics</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="text-center p-4 bg-purple-50 rounded-lg">
+                            <div className="text-3xl font-bold text-purple-600">
+                              {contacts.filter(c => c.yardSign).length}
+                            </div>
+                            <div className="text-sm text-gray-600">Yard Signs</div>
+                          </div>
+                          <div className="text-center p-4 bg-indigo-50 rounded-lg">
+                            <div className="text-3xl font-bold text-indigo-600">
+                              {contacts.filter(c => c.volunteerInterest).length}
+                            </div>
+                            <div className="text-sm text-gray-600">Volunteer Interest</div>
+                          </div>
+                          <div className="text-center p-4 bg-teal-50 rounded-lg">
+                            <div className="text-3xl font-bold text-teal-600">
+                              {contacts.filter(c => c.consented).length}
+                            </div>
+                            <div className="text-sm text-gray-600">Consented Contacts</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {view === 'settings' && (
+                  <div className="h-full overflow-auto custom-scrollbar p-4">
+                    <div className="max-w-2xl mx-auto space-y-6">
+                      
+                      {/* Server Data Source */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4 flex items-center space-x-2">
+                          <Cloud size={24} className="text-blue-600" />
+                          <span>Server Data Source</span>
+                        </h2>
+                        
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium mb-2">
+                              Data URL
+                            </label>
+                            <div className="flex space-x-2">
+                              <input
+                                type="text"
+                                value={dataUrl}
+                                onChange={(e) => setDataUrl(e.target.value)}
+                                placeholder="https://yourserver.com/addresses.csv"
+                                className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                              />
+                              <button
+                                onClick={() => {
+                                  localStorage.setItem('dataUrl', dataUrl);
+                                  loadAddressesFromServer(dataUrl);
+                                }}
+                                disabled={isLoading}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center space-x-2"
+                              >
+                                {isLoading ? (
+                                  <div className="spinner" style={{width: 16, height: 16, borderWidth: 2}}></div>
+                                ) : (
+                                  <RefreshCw size={16} />
+                                )}
+                                <span>Load</span>
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">
+                              Enter the URL to your CSV file. Can be a local file path or remote URL.
+                            </p>
+                          </div>
+                          
+                          {/* Status indicator */}
+                          <div className="p-4 rounded-lg bg-gray-50">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium">Data Status</span>
+                              {dataSource === 'server' && (
+                                <span className="flex items-center text-green-600 text-sm">
+                                  <CheckCircle size={16} className="mr-1" />
+                                  Loaded from server
+                                </span>
+                              )}
+                              {dataSource === 'local' && (
+                                <span className="flex items-center text-blue-600 text-sm">
+                                  <CheckCircle size={16} className="mr-1" />
+                                  Loaded from file
+                                </span>
+                              )}
+                              {dataSource === 'none' && (
+                                <span className="flex items-center text-gray-500 text-sm">
+                                  <AlertCircle size={16} className="mr-1" />
+                                  No data loaded
+                                </span>
+                              )}
+                            </div>
+                            
+                            {addresses.length > 0 && (
+                              <p className="text-sm text-green-600">
+                                ✓ {addresses.length} addresses loaded
+                              </p>
+                            )}
+                            
+                            {lastLoadTime && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Last updated: {new Date(lastLoadTime).toLocaleString()}
+                              </p>
+                            )}
+                            
+                            {loadError && (
+                              <p className="text-sm text-red-600 mt-2">
+                                ⚠ Error: {loadError}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Local File Upload (Backup Option) */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4">Local File Upload</h2>
+                        <p className="text-sm text-gray-600 mb-4">
+                          Alternatively, you can upload a CSV file directly from your device.
+                        </p>
+                        
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium mb-2">
+                              Upload Address CSV
+                            </label>
+                            <input
+                              type="file"
+                              accept=".csv"
+                              onChange={handleFileUpload}
+                              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                            />
+                            <p className="text-xs text-gray-500 mt-2">
+                              Upload a CSV file with columns: ADDRESS/STREET_NAME, LATITUDE, LONGITUDE, WARD
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Export Data */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4">Export Data</h2>
+                        <div className="space-y-4">
+                          <div>
+                            <button
+                              onClick={exportData}
+                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                            >
+                              <Download size={20} />
+                              <span>Export All Data</span>
+                            </button>
+                            <p className="text-xs text-gray-500 mt-2">
+                              Downloads a JSON file with all addresses and contacts
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Issue Management */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4">Manage Issues</h2>
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap gap-2">
+                            {issues.map(issue => (
+                              <div key={issue} className="flex items-center space-x-2 bg-gray-100 px-3 py-1 rounded-full">
+                                <span className="text-sm">{issue}</span>
+                                <button
+                                  onClick={() => setIssues(issues.filter(i => i !== issue))}
+                                  className="text-red-600 hover:text-red-800"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex space-x-2">
+                            <input
+                              type="text"
+                              id="newIssue"
+                              placeholder="Add new issue..."
+                              className="flex-1 px-3 py-2 border rounded-lg"
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter' && e.target.value.trim()) {
+                                  setIssues([...issues, e.target.value.trim()]);
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                const input = document.getElementById('newIssue');
+                                if (input.value.trim()) {
+                                  setIssues([...issues, input.value.trim()]);
+                                  input.value = '';
+                                }
+                              }}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Clear Local Data */}
+                      <div className="bg-white rounded-lg shadow-sm p-6">
+                        <h2 className="text-xl font-bold mb-4 text-red-600">Danger Zone</h2>
+                        <div className="space-y-4">
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to clear all local contact data? Address data will be preserved.')) {
+                                setContacts([]);
+                                localStorage.removeItem('contacts');
+                              }
+                            }}
+                            className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
+                          >
+                            Clear Contact Data
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to clear ALL local data including addresses and contacts?')) {
+                                setAddresses([]);
+                                setContacts([]);
+                                setDataSource('none');
+                                setLastLoadTime(null);
+                                localStorage.removeItem('addresses');
+                                localStorage.removeItem('contacts');
+                                localStorage.removeItem('dataSource');
+                                localStorage.removeItem('lastLoadTime');
+                              }
+                            }}
+                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                          >
+                            Clear All Data
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </main>
+
+              {/* Contact Form Modal */}
+              {showContactForm && selectedAddress && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+                    {/* Fixed Header */}
+                    <div className="flex-shrink-0 p-6 border-b">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h2 className="text-xl font-bold">
+                            {selectedAddress.streetNumber} {selectedAddress.streetName}
+                          </h2>
+                          <p className="text-sm text-gray-600">{selectedAddress.city}</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowContactForm(false);
+                            setSelectedAddress(null);
+                          }}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          <X size={24} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Scrollable Content */}
+                    <div className="flex-1 overflow-y-auto p-6">
+                      <div className="space-y-4">
+                        {/* Previous contacts at this address */}
+                        {contacts.filter(c => c.addressId === selectedAddress.id).length > 0 && (
+                          <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                            <h3 className="font-semibold mb-2">Previous Contacts</h3>
+                            <div className="space-y-2">
+                              {contacts.filter(c => c.addressId === selectedAddress.id).map(contact => (
+                                <div key={contact.id} className="text-sm bg-white p-3 rounded border">
+                                  <div className="flex justify-between">
+                                    <span className="font-medium">{contact.name || 'No name'}</span>
+                                    <span className="text-gray-500">{contact.status.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</span>
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {new Date(contact.timestamp).toLocaleString()} by {contact.canvasser}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-sm font-medium mb-2">
+                            Contact Status <span className="text-red-500">*</span>
+                          </label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { value: 'contacted', label: 'Contacted', color: 'green' },
+                              { value: 'not-home', label: 'Not Home', color: 'amber' },
+                              { value: 'refused', label: 'Refused', color: 'red' },
+                              { value: 'moved', label: 'Moved', color: 'gray' }
+                            ].map(status => (
+                              <button
+                                key={status.value}
+                                onClick={() => setContactForm({...contactForm, status: status.value})}
+                                className={`px-4 py-3 rounded-lg border-2 text-sm font-medium transition ${
+                                  contactForm.status === status.value 
+                                    ? `border-${status.color}-500 bg-${status.color}-50 text-${status.color}-700` 
+                                    : 'border-gray-300 hover:border-gray-400'
+                                }`}
+                              >
+                                {status.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {contactForm.status === 'contacted' && (
+                          <>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium mb-2">Name</label>
+                                <input
+                                  type="text"
+                                  value={contactForm.name}
+                                  onChange={(e) => setContactForm({...contactForm, name: e.target.value})}
+                                  className="w-full px-3 py-2 border rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium mb-2">Email</label>
+                                <input
+                                  type="email"
+                                  value={contactForm.email}
+                                  onChange={(e) => setContactForm({...contactForm, email: e.target.value})}
+                                  className={`w-full px-3 py-2 border rounded-lg ${
+                                    contactForm.email && !validateEmail(contactForm.email) ? 'border-red-500' : ''
+                                  }`}
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium mb-2">Phone</label>
+                              <input
+                                type="tel"
+                                value={contactForm.phone}
+                                onChange={(e) => {
+                                  const formatted = formatPhoneNumber(e.target.value);
+                                  setContactForm({...contactForm, phone: formatted});
+                                }}
+                                placeholder="(416) 555-1234"
+                                className="w-full px-3 py-2 border rounded-lg"
+                                maxLength={14}
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium mb-2">
+                                Support Level <span className="text-red-500">*</span>
+                              </label>
+                              <div className="grid grid-cols-2 gap-2">
+                                {['strong-support', 'leaning-support', 'undecided', 'leaning-against', 'strong-against'].map(level => (
+                                  <button
+                                    key={level}
+                                    onClick={() => setContactForm({...contactForm, supportLevel: level})}
+                                    className={`px-4 py-2 rounded-lg border-2 text-sm ${
+                                      contactForm.supportLevel === level ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+                                    }`}
+                                  >
+                                    {level.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                                  </button>
+                                ))}
+                              </div>
+                              {!contactForm.supportLevel && (
+                                <p className="text-xs text-red-500 mt-1">Please select a support level</p>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium mb-2">Issues</label>
+                              <div className="flex flex-wrap gap-2">
+                                {issues.map(issue => (
+                                  <button
+                                    key={issue}
+                                    onClick={() => {
+                                      const newIssues = contactForm.issues.includes(issue)
+                                        ? contactForm.issues.filter(i => i !== issue)
+                                        : [...contactForm.issues, issue];
+                                      setContactForm({...contactForm, issues: newIssues});
+                                    }}
+                                    className={`px-3 py-1 rounded-full text-sm ${
+                                      contactForm.issues.includes(issue)
+                                        ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                                        : 'bg-gray-100 border-2 border-transparent'
+                                    }`}
+                                  >
+                                    {issue}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="flex items-center space-x-3">
+                                <input
+                                  type="checkbox"
+                                  checked={contactForm.yardSign}
+                                  onChange={(e) => setContactForm({...contactForm, yardSign: e.target.checked})}
+                                  className="w-4 h-4"
+                                />
+                                <span className="text-sm">Yard sign requested</span>
+                              </label>
+                              <label className="flex items-center space-x-3">
+                                <input
+                                  type="checkbox"
+                                  checked={contactForm.volunteerInterest}
+                                  onChange={(e) => setContactForm({...contactForm, volunteerInterest: e.target.checked})}
+                                  className="w-4 h-4"
+                                />
+                                <span className="text-sm">Volunteer interest</span>
+                              </label>
+                              <label className="flex items-center space-x-3">
+                                <input
+                                  type="checkbox"
+                                  checked={contactForm.literatureDropped}
+                                  onChange={(e) => setContactForm({...contactForm, literatureDropped: e.target.checked})}
+                                  className="w-4 h-4"
+                                />
+                                <span className="text-sm">Literature dropped</span>
+                              </label>
+                            </div>
+
+                            <textarea
+                              value={contactForm.notes}
+                              onChange={(e) => setContactForm({...contactForm, notes: e.target.value})}
+                              placeholder="Notes..."
+                              rows="3"
+                              className="w-full px-3 py-2 border rounded-lg"
+                            />
+
+                            <label className="flex items-center space-x-3">
+                              <input
+                                type="checkbox"
+                                checked={contactForm.consented}
+                                onChange={(e) => setContactForm({...contactForm, consented: e.target.checked})}
+                                className="w-4 h-4"
+                              />
+                              <span className="text-sm">Consented to contact (PIPEDA)</span>
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Fixed Footer */}
+                    <div className="flex-shrink-0 p-6 border-t flex justify-end space-x-3">
+                      <button
+                        onClick={() => {
+                          setShowContactForm(false);
+                          setSelectedAddress(null);
+                          setContactForm({
+                            name: '',
+                            email: '',
+                            phone: '',
+                            supportLevel: '',
+                            issues: [],
+                            notes: '',
+                            yardSign: false,
+                            volunteerInterest: false,
+                            literatureDropped: false,
+                            literatureType: '',
+                            consented: false,
+                            status: ''
+                          });
+                        }}
+                        className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSubmitContact}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        disabled={!contactForm.status || (contactForm.status === 'contacted' && !contactForm.supportLevel)}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        // Render the app
+        ReactDOM.render(<CanvassingApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
