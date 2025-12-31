@@ -101,7 +101,7 @@
         // =====================================================
         // GOOGLE SHEETS BACKEND - For saving/loading contacts
         // =====================================================
-        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbziTi4LpIHoIG_YPB2X2BJoH5tGKr0j3plBBKgO9Ta4Z12fRUraVGLKA5eWPwghArOa/exec';
+        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwBVpZXTkA9xUGKYZ48_2MMdTqFg1dRgaYz_T_NJ1NXvtkHxCb-Pe6sK5z4tNTmWd5m/exec';
         // =====================================================
         
         // =====================================================
@@ -1165,9 +1165,70 @@
             });
           };
 
+          // Check if user can delete a contact
+          const canDeleteContact = (contact) => {
+            // Admins can delete anything
+            if (userRole === 'admin') return true;
+            
+            // Canvassers can only delete their own entries
+            const isOwnEntry = contact.canvasser === currentUser?.name || 
+                               contact.canvasser === currentUser?.email;
+            if (!isOwnEntry) return false;
+            
+            // And only within 24 hours
+            const entryTime = new Date(contact.timestamp);
+            const now = new Date();
+            const hoursSinceEntry = (now - entryTime) / (1000 * 60 * 60);
+            
+            return hoursSinceEntry <= 24;
+          };
+
+          // Delete contact from Google Sheets
+          const deleteContactFromSheets = async (contact) => {
+            try {
+              const token = authToken || localStorage.getItem('authToken');
+              
+              await fetch(GOOGLE_SHEETS_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  action: 'delete',
+                  token: token,
+                  timestamp: contact.timestamp,
+                  address: contact.address,
+                  canvasser: contact.canvasser
+                })
+              });
+              console.log('Contact deleted from Google Sheets');
+              return true;
+            } catch (error) {
+              console.error('Error deleting from Google Sheets:', error);
+              return false;
+            }
+          };
+
           const handleDeleteContact = (contactId) => {
+            const contact = contacts.find(c => c.id === contactId);
+            if (!contact) return;
+            
+            // Check if user can delete this contact
+            if (!canDeleteContact(contact)) {
+              if (contact.canvasser !== currentUser?.name && contact.canvasser !== currentUser?.email) {
+                alert('You can only delete your own entries.');
+              } else {
+                alert('You can only delete entries from the last 24 hours.');
+              }
+              return;
+            }
+            
             if (confirm('Are you sure you want to delete this contact?')) {
+              // Delete from local state
               setContacts(contacts.filter(c => c.id !== contactId));
+              // Delete from Google Sheets
+              deleteContactFromSheets(contact);
             }
           };
 
@@ -1724,12 +1785,15 @@
                                               </span>
                                             )}
                                           </div>
-                                          <button
-                                            onClick={() => handleDeleteContact(contact.id)}
-                                            className="text-red-600 hover:text-red-800"
-                                          >
-                                            <Trash2 size={16} />
-                                          </button>
+                                          {canDeleteContact(contact) && (
+                                            <button
+                                              onClick={() => handleDeleteContact(contact.id)}
+                                              className="text-red-600 hover:text-red-800"
+                                              title="Delete this entry"
+                                            >
+                                              <Trash2 size={16} />
+                                            </button>
+                                          )}
                                         </div>
                                         {contact.issues.length > 0 && (
                                           <div className="flex flex-wrap gap-1 mt-2">
