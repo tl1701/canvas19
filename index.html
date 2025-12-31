@@ -95,6 +95,12 @@
         // 'https://yourserver.com/api/addresses'     - API endpoint returning CSV
         // =====================================================
         
+        // =====================================================
+        // GOOGLE SHEETS BACKEND - For saving/loading contacts
+        // =====================================================
+        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwrvQUSAkaDVMRyNsvFOOq-5AU8vVo0Mk6g0S5K9Ymn3zeble9rhY0hKZsntdfvF1sB/exec';
+        // =====================================================
+        
         // Icon components (simplified SVG icons)
         const MapPin = ({ size = 24, className = "" }) => (
             <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -710,6 +716,97 @@
             );
           };
 
+          // Function to save contact to Google Sheets
+          const saveContactToSheets = async (contact, address) => {
+            try {
+              const response = await fetch(GOOGLE_SHEETS_URL, {
+                method: 'POST',
+                mode: 'no-cors', // Required for Google Apps Script
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  action: 'save',
+                  canvasser: contact.canvasser,
+                  address: `${address.streetNumber} ${address.streetName}`,
+                  unit: contact.unit || '',
+                  city: address.city || 'Toronto',
+                  status: contact.status,
+                  name: contact.name || '',
+                  email: contact.email || '',
+                  phone: contact.phone || '',
+                  supportLevel: contact.supportLevel || '',
+                  issues: contact.issues || [],
+                  yardSign: contact.yardSign || false,
+                  volunteerInterest: contact.volunteerInterest || false,
+                  literatureDropped: contact.literatureDropped || false,
+                  consented: contact.consented || false,
+                  notes: contact.notes || ''
+                })
+              });
+              console.log('Contact saved to Google Sheets');
+              return true;
+            } catch (error) {
+              console.error('Error saving to Google Sheets:', error);
+              return false;
+            }
+          };
+
+          // Function to load contacts from Google Sheets
+          const loadContactsFromSheets = async () => {
+            try {
+              const response = await fetch(GOOGLE_SHEETS_URL);
+              const data = await response.json();
+              
+              if (data.success && data.contacts) {
+                // Convert sheet data to our contact format
+                const sheetContacts = data.contacts.map((row, index) => ({
+                  id: `sheet-${index}-${Date.now()}`,
+                  timestamp: row.Timestamp || new Date().toISOString(),
+                  canvasser: row.Canvasser || '',
+                  address: row.Address || '',
+                  unit: row.Unit || '',
+                  city: row.City || '',
+                  status: row.Status || '',
+                  name: row.Name || '',
+                  email: row.Email || '',
+                  phone: row.Phone || '',
+                  supportLevel: row.SupportLevel || '',
+                  issues: row.Issues ? row.Issues.split(', ').filter(i => i) : [],
+                  yardSign: row.YardSign === 'Yes',
+                  volunteerInterest: row.Volunteer === 'Yes',
+                  literatureDropped: row.Literature === 'Yes',
+                  consented: row.Consented === 'Yes',
+                  notes: row.Notes || '',
+                  // We need to match this to an address ID
+                  addressId: null
+                }));
+                
+                return sheetContacts;
+              }
+              return [];
+            } catch (error) {
+              console.error('Error loading from Google Sheets:', error);
+              return [];
+            }
+          };
+
+          // Function to match sheet contacts to addresses
+          const matchContactsToAddresses = (sheetContacts, addressList) => {
+            return sheetContacts.map(contact => {
+              // Find matching address
+              const matchingAddress = addressList.find(addr => {
+                const addrString = `${addr.streetNumber} ${addr.streetName}`.toLowerCase();
+                return addrString === contact.address.toLowerCase();
+              });
+              
+              return {
+                ...contact,
+                addressId: matchingAddress ? matchingAddress.id : null
+              };
+            }).filter(c => c.addressId !== null); // Only keep contacts we can match
+          };
+
           // Function to load addresses from server
           const loadAddressesFromServer = async (url = dataUrl) => {
             setIsLoading(true);
@@ -755,7 +852,6 @@
           // Load data from localStorage on mount, then try server
           useEffect(() => {
             const savedUser = localStorage.getItem('currentUser');
-            const savedContacts = localStorage.getItem('contacts');
             const savedDataUrl = localStorage.getItem('dataUrl');
             const savedDataSource = localStorage.getItem('dataSource');
             const savedLastLoadTime = localStorage.getItem('lastLoadTime');
@@ -765,21 +861,38 @@
             if (savedLastLoadTime) setLastLoadTime(savedLastLoadTime);
             if (savedDataSource) setDataSource(savedDataSource);
             
-            // Load contacts from localStorage (these are small enough to cache)
-            if (savedContacts) {
-              try {
-                setContacts(JSON.parse(savedContacts));
-              } catch (e) {
-                console.warn('Could not parse saved contacts:', e);
-              }
-            }
-            
-            // Always load addresses fresh from server (too large to cache)
+            // Load addresses from server, then load contacts from Google Sheets
             const urlToUse = savedDataUrl || DEFAULT_DATA_URL;
-            loadAddressesFromServer(urlToUse);
+            loadAddressesFromServer(urlToUse).then(() => {
+              // After addresses load, load contacts from Google Sheets
+              loadContactsFromSheets().then(sheetContacts => {
+                if (sheetContacts.length > 0) {
+                  // We need to wait for addresses to be set, so we'll do matching in another useEffect
+                  console.log(`Loaded ${sheetContacts.length} contacts from Google Sheets`);
+                }
+              });
+            });
           }, []);
 
-          // Save contacts to localStorage whenever they change (contacts are small enough to cache)
+          // Load contacts from Google Sheets once addresses are loaded
+          const [sheetsLoaded, setSheetsLoaded] = useState(false);
+          
+          useEffect(() => {
+            if (addresses.length > 0 && !sheetsLoaded) {
+              loadContactsFromSheets().then(sheetContacts => {
+                if (sheetContacts.length > 0) {
+                  const matchedContacts = matchContactsToAddresses(sheetContacts, addresses);
+                  if (matchedContacts.length > 0) {
+                    setContacts(matchedContacts);
+                    console.log(`Matched ${matchedContacts.length} contacts from Google Sheets`);
+                  }
+                }
+                setSheetsLoaded(true);
+              });
+            }
+          }, [addresses, sheetsLoaded]);
+
+          // Save contacts to localStorage as backup
           useEffect(() => {
             if (contacts.length > 0) {
               try {
@@ -878,7 +991,12 @@
               canvasser: currentUser.username
             };
 
+            // Save to local state
             setContacts([...contacts, newContact]);
+            
+            // Also save to Google Sheets
+            saveContactToSheets(newContact, selectedAddress);
+            
             setShowContactForm(false);
             setSelectedAddress(null);
             setContactForm({
