@@ -1430,73 +1430,73 @@
 
               {/* Main Content */}
               <main className="flex-1 overflow-hidden">
-                {view === 'map' && (
-                  <div className="h-full relative">
-                    {isLoading && addresses.length === 0 ? (
-                      <div className="h-full flex items-center justify-center bg-gray-100">
-                        <div className="text-center">
-                          <div className="spinner mx-auto mb-4"></div>
-                          <p className="text-gray-600">Loading addresses from server...</p>
+                {/* Map View - use CSS to hide instead of unmounting to preserve position */}
+                <div className={`h-full relative ${view !== 'map' ? 'hidden' : ''}`}>
+                  {isLoading && addresses.length === 0 ? (
+                    <div className="h-full flex items-center justify-center bg-gray-100">
+                      <div className="text-center">
+                        <div className="spinner mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading addresses from server...</p>
+                      </div>
+                    </div>
+                  ) : addresses.length === 0 ? (
+                    <div className="h-full flex items-center justify-center bg-gray-100">
+                      <div className="text-center">
+                        <MapPin size={48} className="mx-auto text-gray-400 mb-4" />
+                        <p className="text-gray-600 mb-4">
+                          {loadError 
+                            ? `Error loading data: ${loadError}` 
+                            : 'No addresses loaded yet'}
+                        </p>
+                        <div className="space-y-2">
+                          <button
+                            onClick={() => loadAddressesFromServer()}
+                            disabled={isLoading}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center space-x-2 mx-auto"
+                          >
+                            {isLoading ? (
+                              <>
+                                <div className="spinner" style={{width: 16, height: 16, borderWidth: 2}}></div>
+                                <span>Loading...</span>
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw size={16} />
+                                <span>Retry Loading Data</span>
+                              </>
+                            )}
+                          </button>
+                          <p className="text-sm text-gray-500">or</p>
+                          <button
+                            onClick={() => setView('settings')}
+                            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                          >
+                            Configure Data Source
+                          </button>
                         </div>
                       </div>
-                    ) : addresses.length === 0 ? (
-                      <div className="h-full flex items-center justify-center bg-gray-100">
-                        <div className="text-center">
-                          <MapPin size={48} className="mx-auto text-gray-400 mb-4" />
-                          <p className="text-gray-600 mb-4">
-                            {loadError 
-                              ? `Error loading data: ${loadError}` 
-                              : 'No addresses loaded yet'}
-                          </p>
-                          <div className="space-y-2">
-                            <button
-                              onClick={() => loadAddressesFromServer()}
-                              disabled={isLoading}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center space-x-2 mx-auto"
-                            >
-                              {isLoading ? (
-                                <>
-                                  <div className="spinner" style={{width: 16, height: 16, borderWidth: 2}}></div>
-                                  <span>Loading...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <RefreshCw size={16} />
-                                  <span>Retry Loading Data</span>
-                                </>
-                              )}
-                            </button>
-                            <p className="text-sm text-gray-500">or</p>
-                            <button
-                              onClick={() => setView('settings')}
-                              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                            >
-                              Configure Data Source
-                            </button>
-                          </div>
+                    </div>
+                  ) : (
+                    <>
+                      <MapView 
+                        addresses={addresses} 
+                        contacts={contacts}
+                        onAddressClick={handleAddressClick}
+                        selectedAddress={selectedAddress}
+                        savedMapView={savedMapView}
+                        onMapViewChange={setSavedMapView}
+                      />
+                      
+                      {/* Loading overlay when refreshing */}
+                      {isLoading && (
+                        <div className="absolute top-4 right-16 bg-white rounded-lg shadow-lg px-3 py-2 text-sm flex items-center space-x-2 z-[1000]">
+                          <div className="spinner" style={{width: 16, height: 16, borderWidth: 2}}></div>
+                          <span>Updating...</span>
                         </div>
-                      </div>
-                    ) : (
-                      <>
-                        <MapView 
-                          addresses={addresses} 
-                          contacts={contacts}
-                          onAddressClick={handleAddressClick}
-                          selectedAddress={selectedAddress}
-                          savedMapView={savedMapView}
-                          onMapViewChange={setSavedMapView}
-                        />
-                        
-                        {/* Loading overlay when refreshing */}
-                        {isLoading && (
-                          <div className="absolute top-4 right-16 bg-white rounded-lg shadow-lg px-3 py-2 text-sm flex items-center space-x-2 z-[1000]">
-                            <div className="spinner" style={{width: 16, height: 16, borderWidth: 2}}></div>
-                            <span>Updating...</span>
-                          </div>
-                        )}
-                        
-                        {/* Nearby Addresses Panel */}
-                        <div className="absolute top-4 left-4 z-[1000]" style={{maxWidth: '280px'}}>
+                      )}
+                      
+                      {/* Nearby Addresses Panel */}
+                      <div className="absolute top-4 left-4 z-[1000]" style={{maxWidth: '280px'}}>
                           {!userLocation ? (
                             <button
                               onClick={startLocationTracking}
@@ -1594,7 +1594,6 @@
                       </>
                     )}
                   </div>
-                )}
 
                 {view === 'list' && (
                   <div className="h-full overflow-auto custom-scrollbar p-4">
