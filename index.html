@@ -368,7 +368,7 @@
         };
 
         // Map Component with viewport-based rendering for performance
-        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress, savedMapView, onMapViewChange }) => {
+        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress, savedMapView, onMapViewChange, onViewInList }) => {
           const mapRef = useRef(null);
           const mapInstanceRef = useRef(null);
           const markersLayerRef = useRef(null);
@@ -454,31 +454,90 @@
                 icon: createMarkerIcon(status)
               });
 
-              // Create popup content
+              // Create popup content with contact details
               const contactCount = addressContacts.length;
+              const latestContact = addressContacts.length > 0 ? addressContacts[addressContacts.length - 1] : null;
+              
+              // Support level colors
+              const supportColors = {
+                'strong-support': '#22c55e',
+                'lean-support': '#86efac',
+                'undecided': '#fbbf24',
+                'lean-oppose': '#fca5a5',
+                'strong-oppose': '#ef4444'
+              };
+              
+              // Build contact details HTML
+              let contactDetailsHtml = '';
+              if (latestContact) {
+                const supportColor = supportColors[latestContact.supportLevel] || '#9ca3af';
+                const supportLabel = latestContact.supportLevel 
+                  ? latestContact.supportLevel.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+                  : '';
+                
+                contactDetailsHtml = `
+                  ${latestContact.name ? `<div style="font-weight: 600; margin-top: 8px;">${latestContact.name}</div>` : ''}
+                  ${supportLabel ? `
+                    <div style="display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 12px; font-size: 11px; color: white; background: ${supportColor};">
+                      ${supportLabel}
+                    </div>
+                  ` : ''}
+                  ${latestContact.issues && latestContact.issues.length > 0 ? `
+                    <div style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;">
+                      ${latestContact.issues.slice(0, 4).map(issue => 
+                        `<span style="background: #dbeafe; color: #1d4ed8; padding: 2px 6px; border-radius: 8px; font-size: 10px;">${issue}</span>`
+                      ).join('')}
+                      ${latestContact.issues.length > 4 ? `<span style="font-size: 10px; color: #666;">+${latestContact.issues.length - 4} more</span>` : ''}
+                    </div>
+                  ` : ''}
+                  ${latestContact.notes ? `
+                    <div style="margin-top: 6px; font-size: 11px; color: #666; font-style: italic; max-height: 40px; overflow: hidden;">
+                      "${latestContact.notes.length > 80 ? latestContact.notes.substring(0, 80) + '...' : latestContact.notes}"
+                    </div>
+                  ` : ''}
+                  ${contactCount > 1 ? `<div style="font-size: 10px; color: #666; margin-top: 4px;">+ ${contactCount - 1} more contact${contactCount > 2 ? 's' : ''}</div>` : ''}
+                `;
+              }
+              
               const popupContent = `
-                <div style="min-width: 150px;">
+                <div style="min-width: 180px; max-width: 250px;">
                   <strong>${address.streetNumber} ${address.streetName}</strong><br/>
-                  <span style="font-size: 12px; color: #666;">${address.city || 'Toronto'}</span><br/>
-                  <span style="font-size: 12px; margin-top: 4px; display: block;">
-                    ${contactCount > 0 ? `${contactCount} contact${contactCount > 1 ? 's' : ''}` : 'Not contacted'}
-                  </span>
-                  <button 
-                    onclick="window.handleMarkerClick('${address.id}')"
-                    style="
-                      margin-top: 8px;
-                      background: #3b82f6;
-                      color: white;
-                      border: none;
-                      padding: 6px 12px;
-                      border-radius: 4px;
-                      cursor: pointer;
-                      font-size: 12px;
-                      width: 100%;
-                    "
-                  >
-                    ${contactCount > 0 ? 'View Details' : 'Add Contact'}
-                  </button>
+                  <span style="font-size: 12px; color: #666;">${address.city || 'Toronto'}</span>
+                  ${contactDetailsHtml || '<div style="font-size: 12px; color: #666; margin-top: 4px;">Not contacted yet</div>'}
+                  <div style="display: flex; gap: 6px; margin-top: 10px;">
+                    <button 
+                      onclick="window.handleMarkerClick('${address.id}')"
+                      style="
+                        flex: 1;
+                        background: #3b82f6;
+                        color: white;
+                        border: none;
+                        padding: 6px 10px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 11px;
+                      "
+                    >
+                      ${contactCount > 0 ? 'Edit' : 'Add Contact'}
+                    </button>
+                    ${contactCount > 0 ? `
+                      <button 
+                        onclick="window.handleViewInList('${address.id}')"
+                        style="
+                          flex: 1;
+                          background: #e5e7eb;
+                          color: #374151;
+                          border: none;
+                          padding: 6px 10px;
+                          border-radius: 4px;
+                          cursor: pointer;
+                          font-size: 11px;
+                        "
+                      >
+                        View in List
+                      </button>
+                    ` : ''}
+                  </div>
                 </div>
               `;
 
@@ -633,11 +692,18 @@
                 onAddressClick(address);
               }
             };
+            
+            window.handleViewInList = (addressId) => {
+              if (onViewInList) {
+                onViewInList(addressId);
+              }
+            };
 
             return () => {
               delete window.handleMarkerClick;
+              delete window.handleViewInList;
             };
-          }, [onAddressClick]);
+          }, [onAddressClick, onViewInList]);
 
           return <div ref={mapRef} id="map" className="w-full h-full" />;
         };
@@ -1485,6 +1551,14 @@
                         selectedAddress={selectedAddress}
                         savedMapView={savedMapView}
                         onMapViewChange={setSavedMapView}
+                        onViewInList={(addressId) => {
+                          // Set search to the address to filter the list
+                          const address = addresses.find(a => a.id === addressId);
+                          if (address) {
+                            setListSearch(`${address.streetNumber} ${address.streetName}`);
+                            setView('list');
+                          }
+                        }}
                       />
                       
                       {/* Loading overlay when refreshing */}
