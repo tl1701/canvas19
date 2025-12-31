@@ -742,7 +742,7 @@
             'Inclusion/Diversity', 'Business', 'Other'
           ];
           
-          const [sortBy, setSortBy] = useState('distance');
+          const [sortBy, setSortBy] = useState('street');
           const [filterStatus, setFilterStatus] = useState('all');
           const [filterCombination, setFilterCombination] = useState('any');
           const [selectedIssues, setSelectedIssues] = useState([]);
@@ -2211,40 +2211,6 @@
                               Downloads a JSON file with all addresses and contacts
                             </p>
                           </div>
-                        </div>
-                      </div>
-
-                      {/* Clear Local Data */}
-                      <div className="bg-white rounded-lg shadow-sm p-6">
-                        <h2 className="text-xl font-bold mb-4 text-red-600">Danger Zone</h2>
-                        <div className="space-y-4">
-                          <button
-                            onClick={() => {
-                              if (confirm('Are you sure you want to clear all local contact data? Address data will be preserved.')) {
-                                setContacts([]);
-                                localStorage.removeItem('contacts');
-                              }
-                            }}
-                            className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
-                          >
-                            Clear Contact Data
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm('Are you sure you want to clear ALL local data including contacts? (Addresses will reload from server)')) {
-                                setAddresses([]);
-                                setContacts([]);
-                                setDataSource('none');
-                                setLastLoadTime(null);
-                                localStorage.removeItem('contacts');
-                                localStorage.removeItem('dataSource');
-                                localStorage.removeItem('lastLoadTime');
-                              }
-                            }}
-                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                          >
-                            Clear All Data
-                          </button>
                         </div>
                       </div>
                     </div>
