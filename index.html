@@ -63,7 +63,10 @@
         .marker-refused {
             filter: hue-rotate(0deg) brightness(0.7) saturate(1.5);
         }
-        .marker-moved {
+        .marker-business {
+            filter: hue-rotate(270deg) brightness(0.9);
+        }
+        .marker-not-applicable {
             filter: grayscale(1) brightness(0.8);
         }
         
@@ -343,7 +346,8 @@
             case 'contacted': return '#22c55e'; // green
             case 'not-home': return '#f59e0b'; // amber
             case 'refused': return '#ef4444'; // red
-            case 'moved': return '#6b7280'; // gray
+            case 'business': return '#8b5cf6'; // purple
+            case 'not-applicable': return '#6b7280'; // gray
             default: return '#3b82f6'; // blue (not contacted)
           }
         };
@@ -1379,7 +1383,8 @@
             contacted: addresses.filter(a => getAddressStatus(a.id) === 'contacted').length,
             notHome: addresses.filter(a => getAddressStatus(a.id) === 'not-home').length,
             refused: addresses.filter(a => getAddressStatus(a.id) === 'refused').length,
-            moved: addresses.filter(a => getAddressStatus(a.id) === 'moved').length,
+            business: addresses.filter(a => getAddressStatus(a.id) === 'business').length,
+            notApplicable: addresses.filter(a => getAddressStatus(a.id) === 'not-applicable').length,
             notContacted: addresses.filter(a => getAddressStatus(a.id) === 'not-contacted').length,
           };
 
@@ -1627,7 +1632,8 @@
                                       'contacted': 'border-l-green-500',
                                       'not-home': 'border-l-amber-500',
                                       'refused': 'border-l-red-500',
-                                      'moved': 'border-l-gray-500',
+                                      'business': 'border-l-purple-500',
+                                      'not-applicable': 'border-l-gray-500',
                                       'not-contacted': 'border-l-blue-500'
                                     };
                                     const distanceText = address.distance < 1000 
@@ -1678,8 +1684,12 @@
                                 <span>Refused</span>
                               </div>
                               <div className="flex items-center space-x-2">
+                                <div className="w-4 h-4 rounded-full" style={{background: '#8b5cf6'}}></div>
+                                <span>Business</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
                                 <div className="w-4 h-4 rounded-full" style={{background: '#6b7280'}}></div>
-                                <span>Moved</span>
+                                <span>N/A</span>
                               </div>
                             </div>
                           </div>
@@ -1757,7 +1767,8 @@
                                 <option value="contacted">Contacted</option>
                                 <option value="not-home">Not Home</option>
                                 <option value="refused">Refused</option>
-                                <option value="moved">Moved</option>
+                                <option value="business">Business</option>
+                                <option value="not-applicable">Not Applicable</option>
                               </select>
                             </div>
                           </div>
@@ -1829,7 +1840,8 @@
                                     'contacted': 'bg-green-100 text-green-800',
                                     'not-home': 'bg-amber-100 text-amber-800',
                                     'refused': 'bg-red-100 text-red-800',
-                                    'moved': 'bg-gray-100 text-gray-800',
+                                    'business': 'bg-purple-100 text-purple-800',
+                                    'not-applicable': 'bg-gray-100 text-gray-800',
                                     'not-contacted': 'bg-blue-100 text-blue-800'
                                   };
 
@@ -1951,9 +1963,13 @@
                             <div className="text-3xl font-bold text-red-600">{stats.refused}</div>
                             <div className="text-sm text-gray-600">Refused</div>
                           </div>
+                          <div className="text-center p-4 bg-purple-50 rounded-lg">
+                            <div className="text-3xl font-bold text-purple-600">{stats.business}</div>
+                            <div className="text-sm text-gray-600">Business</div>
+                          </div>
                           <div className="text-center p-4 bg-gray-50 rounded-lg">
-                            <div className="text-3xl font-bold text-gray-600">{stats.moved}</div>
-                            <div className="text-sm text-gray-600">Moved</div>
+                            <div className="text-3xl font-bold text-gray-600">{stats.notApplicable}</div>
+                            <div className="text-sm text-gray-600">N/A</div>
                           </div>
                           <div className="text-center p-4 bg-blue-50 rounded-lg">
                             <div className="text-3xl font-bold text-blue-600">{stats.notContacted}</div>
@@ -2306,7 +2322,8 @@
                               { value: 'contacted', label: 'Contacted', color: 'green' },
                               { value: 'not-home', label: 'Not Home', color: 'amber' },
                               { value: 'refused', label: 'Refused', color: 'red' },
-                              { value: 'moved', label: 'Moved', color: 'gray' }
+                              { value: 'business', label: 'Business', color: 'purple' },
+                              { value: 'not-applicable', label: 'N/A', color: 'gray' }
                             ].map(status => (
                               <button
                                 key={status.value}
