@@ -616,6 +616,7 @@
           const [userRole, setUserRole] = useState(null); // 'admin' or 'canvasser'
           const [authError, setAuthError] = useState(null);
           const [isAuthenticating, setIsAuthenticating] = useState(false);
+          const [authToken, setAuthToken] = useState(null); // Google credential token for API calls
           const [view, setView] = useState('map');
           const [addresses, setAddresses] = useState([]);
           const [contacts, setContacts] = useState([]);
@@ -729,6 +730,9 @@
           // Function to save contact to Google Sheets
           const saveContactToSheets = async (contact, address) => {
             try {
+              // Get token from state or localStorage
+              const token = authToken || localStorage.getItem('authToken');
+              
               const response = await fetch(GOOGLE_SHEETS_URL, {
                 method: 'POST',
                 mode: 'no-cors', // Required for Google Apps Script
@@ -737,6 +741,7 @@
                 },
                 body: JSON.stringify({
                   action: 'save',
+                  token: token, // Include auth token for verification
                   canvasser: contact.canvasser,
                   address: `${address.streetNumber} ${address.streetName}`,
                   unit: contact.unit || '',
@@ -765,7 +770,10 @@
           // Function to load contacts from Google Sheets
           const loadContactsFromSheets = async () => {
             try {
-              const response = await fetch(GOOGLE_SHEETS_URL);
+              // Get token from state or localStorage
+              const token = authToken || localStorage.getItem('authToken');
+              
+              const response = await fetch(`${GOOGLE_SHEETS_URL}?action=getContacts&token=${encodeURIComponent(token || '')}`);
               const data = await response.json();
               
               if (data.success && data.contacts) {
@@ -914,9 +922,9 @@
           }, [contacts]);
 
           // Check if user is authorized in the Users sheet
-          const checkUserAuthorization = async (email) => {
+          const checkUserAuthorization = async (email, token) => {
             try {
-              const response = await fetch(`${GOOGLE_SHEETS_URL}?action=checkUser&email=${encodeURIComponent(email)}`);
+              const response = await fetch(`${GOOGLE_SHEETS_URL}?action=checkUser&email=${encodeURIComponent(email)}&token=${encodeURIComponent(token || '')}`);
               const data = await response.json();
               return data;
             } catch (error) {
@@ -931,14 +939,18 @@
             setAuthError(null);
             
             try {
+              // Save the credential token for API calls
+              const credential = response.credential;
+              setAuthToken(credential);
+              
               // Decode the JWT token to get user info
-              const payload = JSON.parse(atob(response.credential.split('.')[1]));
+              const payload = JSON.parse(atob(credential.split('.')[1]));
               const email = payload.email;
               const name = payload.name;
               const picture = payload.picture;
               
-              // Check if user is authorized
-              const authResult = await checkUserAuthorization(email);
+              // Check if user is authorized (passing the token for verification)
+              const authResult = await checkUserAuthorization(email, credential);
               
               if (authResult.authorized) {
                 const user = {
@@ -951,6 +963,7 @@
                 setCurrentUser(user);
                 setUserRole(authResult.role || 'canvasser');
                 localStorage.setItem('currentUser', JSON.stringify(user));
+                localStorage.setItem('authToken', credential);
                 
                 // Load data from server on login if not already loaded
                 if (addresses.length === 0) {
@@ -971,23 +984,30 @@
           useEffect(() => {
             // Check for saved user session
             const savedUser = localStorage.getItem('currentUser');
-            if (savedUser) {
+            const savedToken = localStorage.getItem('authToken');
+            
+            if (savedUser && savedToken) {
               try {
                 const user = JSON.parse(savedUser);
+                setAuthToken(savedToken);
+                
                 // Re-verify the user is still authorized
                 if (user.email) {
-                  checkUserAuthorization(user.email).then(authResult => {
+                  checkUserAuthorization(user.email, savedToken).then(authResult => {
                     if (authResult.authorized) {
                       setCurrentUser(user);
                       setUserRole(authResult.role || user.role || 'canvasser');
                     } else {
                       // User is no longer authorized, clear session
                       localStorage.removeItem('currentUser');
+                      localStorage.removeItem('authToken');
+                      setAuthToken(null);
                     }
                   });
                 }
               } catch (e) {
                 localStorage.removeItem('currentUser');
+                localStorage.removeItem('authToken');
               }
             }
 
@@ -1026,7 +1046,9 @@
             setCurrentUser(null);
             setUserRole(null);
             setAuthError(null);
+            setAuthToken(null);
             localStorage.removeItem('currentUser');
+            localStorage.removeItem('authToken');
             // Also sign out of Google
             if (window.google && window.google.accounts) {
               window.google.accounts.id.disableAutoSelect();
