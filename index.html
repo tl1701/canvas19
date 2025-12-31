@@ -614,6 +614,7 @@
           const [filterCombination, setFilterCombination] = useState('any');
           const [selectedIssues, setSelectedIssues] = useState([]);
           const [contactForm, setContactForm] = useState({
+            unit: '',
             name: '',
             email: '',
             phone: '',
@@ -762,6 +763,7 @@
             setSelectedAddress(address);
             setShowContactForm(true);
             setContactForm({
+              unit: '',
               name: '',
               email: '',
               phone: '',
@@ -806,6 +808,7 @@
             setShowContactForm(false);
             setSelectedAddress(null);
             setContactForm({
+              unit: '',
               name: '',
               email: '',
               phone: '',
@@ -1222,6 +1225,7 @@
                                       <div key={contact.id} className="bg-gray-50 rounded p-3">
                                         <div className="flex justify-between items-start mb-2">
                                           <div>
+                                            {contact.unit && <p className="text-xs text-blue-600 font-medium">Unit {contact.unit}</p>}
                                             {contact.name && <p className="font-medium">{contact.name}</p>}
                                             {contact.supportLevel && (
                                               <span className="text-xs text-gray-600">
@@ -1662,7 +1666,9 @@
                               {contacts.filter(c => c.addressId === selectedAddress.id).map(contact => (
                                 <div key={contact.id} className="text-sm bg-white p-3 rounded border">
                                   <div className="flex justify-between">
-                                    <span className="font-medium">{contact.name || 'No name'}</span>
+                                    <span className="font-medium">
+                                      {contact.unit ? `Unit ${contact.unit} - ` : ''}{contact.name || 'No name'}
+                                    </span>
                                     <span className="text-gray-500">{contact.status.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</span>
                                   </div>
                                   <div className="text-xs text-gray-500 mt-1">
@@ -1673,6 +1679,17 @@
                             </div>
                           </div>
                         )}
+
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Unit # (optional)</label>
+                          <input
+                            type="text"
+                            value={contactForm.unit}
+                            onChange={(e) => setContactForm({...contactForm, unit: e.target.value})}
+                            placeholder="e.g. 101, 2B, Basement"
+                            className="w-full px-3 py-2 border rounded-lg"
+                          />
+                        </div>
 
                         <div>
                           <label className="block text-sm font-medium mb-2">
@@ -1845,6 +1862,7 @@
                           setShowContactForm(false);
                           setSelectedAddress(null);
                           setContactForm({
+                            unit: '',
                             name: '',
                             email: '',
                             phone: '',
