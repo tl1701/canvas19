@@ -101,7 +101,7 @@
         // =====================================================
         // GOOGLE SHEETS BACKEND - For saving/loading contacts
         // =====================================================
-        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycby7OsiEngt-aMAjlaUoQU_ZBcpXmsc-C04JbFBr9IgVBEk87kG1zfdCavwvNcBgUS4p/exec';
+        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwkDv5j8yqRiLiDqzokWpN6ZkOLXCTu8jFstehknbpAEuLUP-HaQ0TKZikyp-Ej6bA/exec';
         // =====================================================
         
         // =====================================================
@@ -1169,6 +1169,7 @@
           const softDeleteContact = async (contact) => {
             try {
               const token = authToken || localStorage.getItem('authToken');
+              const deletedBy = currentUser?.name || currentUser?.email || 'Unknown';
               
               await fetch(GOOGLE_SHEETS_URL, {
                 method: 'POST',
@@ -1180,7 +1181,8 @@
                   action: 'softDelete',
                   token: token,
                   timestamp: contact.timestamp,
-                  address: contact.address
+                  address: contact.address,
+                  deletedBy: deletedBy
                 })
               });
               console.log('Contact marked as deleted in Google Sheets');
