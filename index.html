@@ -517,6 +517,18 @@
 
             mapInstanceRef.current = map;
 
+            // Fix for map not rendering correctly on initial load
+            // Multiple invalidateSize calls to handle various timing issues
+            setTimeout(() => {
+              map.invalidateSize();
+            }, 100);
+            setTimeout(() => {
+              map.invalidateSize();
+            }, 300);
+            setTimeout(() => {
+              map.invalidateSize();
+            }, 500);
+
             // Add locate control
             const locateButton = L.control({position: 'topright'});
             locateButton.onAdd = function() {
