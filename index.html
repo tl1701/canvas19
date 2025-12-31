@@ -424,10 +424,11 @@
 
             // Create marker cluster group
             const markers = L.markerClusterGroup({
-              maxClusterRadius: 50,
+              maxClusterRadius: 40,
               spiderfyOnMaxZoom: true,
               showCoverageOnHover: false,
-              zoomToBoundsOnClick: true
+              zoomToBoundsOnClick: true,
+              disableClusteringAtZoom: 18
             });
 
             const bounds = [];
