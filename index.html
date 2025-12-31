@@ -953,6 +953,16 @@
                 return parseInt(a.streetNumber) - parseInt(b.streetNumber);
               } else if (sortBy === 'status') {
                 return getAddressStatus(a.id).localeCompare(getAddressStatus(b.id));
+              } else if (sortBy === 'distance' && userLocation) {
+                const distA = calculateDistance(
+                  userLocation.lat, userLocation.lng,
+                  parseFloat(a.latitude), parseFloat(a.longitude)
+                );
+                const distB = calculateDistance(
+                  userLocation.lat, userLocation.lng,
+                  parseFloat(b.latitude), parseFloat(b.longitude)
+                );
+                return distA - distB;
               }
               return 0;
             });
@@ -1286,12 +1296,23 @@
                               <label className="block text-sm font-medium mb-2">Sort By</label>
                               <select
                                 value={sortBy}
-                                onChange={(e) => setSortBy(e.target.value)}
+                                onChange={(e) => {
+                                  setSortBy(e.target.value);
+                                  if (e.target.value === 'distance' && !userLocation) {
+                                    startLocationTracking();
+                                  }
+                                }}
                                 className="w-full px-3 py-2 border rounded-lg"
                               >
                                 <option value="street">Street Name</option>
                                 <option value="status">Contact Status</option>
+                                <option value="distance">Distance (Nearest)</option>
                               </select>
+                              {sortBy === 'distance' && !userLocation && (
+                                <p className="text-xs text-amber-600 mt-1">
+                                  {isLocating ? 'Getting your location...' : 'Enable location to sort by distance'}
+                                </p>
+                              )}
                             </div>
                             <div>
                               <label className="block text-sm font-medium mb-2">Filter by Status</label>
@@ -1391,7 +1412,19 @@
                                           <h3 className="font-semibold text-lg">
                                             {address.streetNumber} {address.streetName}
                                           </h3>
-                                          <p className="text-sm text-gray-600">{address.city}</p>
+                                          <p className="text-sm text-gray-600">
+                                            {address.city}
+                                            {sortBy === 'distance' && userLocation && (() => {
+                                              const dist = calculateDistance(
+                                                userLocation.lat, userLocation.lng,
+                                                parseFloat(address.latitude), parseFloat(address.longitude)
+                                              );
+                                              const distText = dist < 1000 
+                                                ? `${Math.round(dist)}m away` 
+                                                : `${(dist / 1000).toFixed(1)}km away`;
+                                              return <span className="ml-2 text-blue-600">• {distText}</span>;
+                                            })()}
+                                          </p>
                                         </div>
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColors[status]}`}>
                                           {status.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
