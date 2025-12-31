@@ -840,6 +840,13 @@
             );
           };
 
+          // Auto-request location when list view is shown with distance sort
+          useEffect(() => {
+            if (view === 'list' && sortBy === 'distance' && !userLocation && !isLocating) {
+              startLocationTracking();
+            }
+          }, [view, sortBy, userLocation, isLocating]);
+
           // Function to save contact to Google Sheets
           const saveContactToSheets = async (contact, address) => {
             try {
