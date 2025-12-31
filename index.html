@@ -368,7 +368,7 @@
         };
 
         // Map Component with viewport-based rendering for performance
-        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress, savedMapView, onMapViewChange, onViewInList }) => {
+        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress, savedMapView, onMapViewChange, onViewInList, onPopupChange }) => {
           const mapRef = useRef(null);
           const mapInstanceRef = useRef(null);
           const markersLayerRef = useRef(null);
@@ -647,6 +647,14 @@
               }).addTo(map).bindPopup('You are here').openPopup();
             });
 
+            // Track popup open/close to hide legend
+            map.on('popupopen', function() {
+              if (onPopupChange) onPopupChange(true);
+            });
+            map.on('popupclose', function() {
+              if (onPopupChange) onPopupChange(false);
+            });
+
             return () => {
               if (updateTimeoutRef.current) {
                 clearTimeout(updateTimeoutRef.current);
@@ -730,7 +738,7 @@
             'Inclusion/Diversity', 'Business', 'Other'
           ];
           
-          const [sortBy, setSortBy] = useState('street');
+          const [sortBy, setSortBy] = useState('distance');
           const [filterStatus, setFilterStatus] = useState('all');
           const [filterCombination, setFilterCombination] = useState('any');
           const [selectedIssues, setSelectedIssues] = useState([]);
@@ -763,6 +771,7 @@
           const [userLocation, setUserLocation] = useState(null);
           const [showNearbyPanel, setShowNearbyPanel] = useState(true);
           const [isLocating, setIsLocating] = useState(false);
+          const [isPopupOpen, setIsPopupOpen] = useState(false);
 
           // Calculate distance between two points in meters
           const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -1559,6 +1568,7 @@
                             setView('list');
                           }
                         }}
+                        onPopupChange={setIsPopupOpen}
                       />
                       
                       {/* Loading overlay when refreshing */}
@@ -1569,8 +1579,8 @@
                         </div>
                       )}
                       
-                      {/* Nearby Addresses Panel */}
-                      <div className="absolute top-4 left-4 z-[1000]" style={{maxWidth: '280px'}}>
+                      {/* Nearby Addresses Panel - positioned below zoom controls */}
+                      <div className="absolute top-20 left-4 z-[1000]" style={{maxWidth: '280px'}}>
                           {!userLocation ? (
                             <button
                               onClick={startLocationTracking}
@@ -1639,32 +1649,34 @@
                           )}
                         </div>
                         
-                        {/* Legend */}
-                        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 text-sm z-[1000]">
-                          <div className="font-semibold mb-2">Legend</div>
-                          <div className="space-y-1">
-                            <div className="flex items-center space-x-2">
-                              <div className="w-4 h-4 rounded-full" style={{background: '#3b82f6'}}></div>
-                              <span>Not Contacted</span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <div className="w-4 h-4 rounded-full" style={{background: '#22c55e'}}></div>
-                              <span>Contacted</span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <div className="w-4 h-4 rounded-full" style={{background: '#f59e0b'}}></div>
-                              <span>Not Home</span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <div className="w-4 h-4 rounded-full" style={{background: '#ef4444'}}></div>
-                              <span>Refused</span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <div className="w-4 h-4 rounded-full" style={{background: '#6b7280'}}></div>
-                              <span>Moved</span>
+                        {/* Legend - hidden when popup is open */}
+                        {!isPopupOpen && (
+                          <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 text-sm z-[1000]">
+                            <div className="font-semibold mb-2">Legend</div>
+                            <div className="space-y-1">
+                              <div className="flex items-center space-x-2">
+                                <div className="w-4 h-4 rounded-full" style={{background: '#3b82f6'}}></div>
+                                <span>Not Contacted</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-4 h-4 rounded-full" style={{background: '#22c55e'}}></div>
+                                <span>Contacted</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-4 h-4 rounded-full" style={{background: '#f59e0b'}}></div>
+                                <span>Not Home</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-4 h-4 rounded-full" style={{background: '#ef4444'}}></div>
+                                <span>Refused</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <div className="w-4 h-4 rounded-full" style={{background: '#6b7280'}}></div>
+                                <span>Moved</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        )}
                       </>
                     )}
                   </div>
