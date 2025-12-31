@@ -352,11 +352,137 @@
           });
         };
 
-        // Map Component
+        // Map Component with viewport-based rendering for performance
         const MapView = ({ addresses, contacts, onAddressClick, selectedAddress }) => {
           const mapRef = useRef(null);
           const mapInstanceRef = useRef(null);
           const markersLayerRef = useRef(null);
+          const addressesRef = useRef([]); // Store addresses for event handlers
+          const contactsRef = useRef([]); // Store contacts for event handlers
+          const updateTimeoutRef = useRef(null);
+
+          // Keep refs in sync with props
+          useEffect(() => {
+            addressesRef.current = addresses;
+          }, [addresses]);
+
+          useEffect(() => {
+            contactsRef.current = contacts;
+          }, [contacts]);
+
+          // Function to get addresses within current viewport
+          const getVisibleAddresses = (map, allAddresses, buffer = 0.1) => {
+            const bounds = map.getBounds();
+            const bufferedBounds = bounds.pad(buffer); // Add buffer around viewport
+            
+            return allAddresses.filter(address => {
+              if (!address.latitude || !address.longitude) return false;
+              const lat = parseFloat(address.latitude);
+              const lng = parseFloat(address.longitude);
+              if (isNaN(lat) || isNaN(lng)) return false;
+              return bufferedBounds.contains([lat, lng]);
+            });
+          };
+
+          // Function to update markers based on viewport
+          const updateVisibleMarkers = (map) => {
+            if (!map || !addressesRef.current.length) return;
+
+            const currentZoom = map.getZoom();
+            const allAddresses = addressesRef.current;
+            const allContacts = contactsRef.current;
+
+            // Clear existing markers
+            if (markersLayerRef.current) {
+              map.removeLayer(markersLayerRef.current);
+            }
+
+            // Create marker cluster group
+            const markers = L.markerClusterGroup({
+              maxClusterRadius: 40,
+              spiderfyOnMaxZoom: true,
+              showCoverageOnHover: false,
+              zoomToBoundsOnClick: true,
+              disableClusteringAtZoom: 18,
+              chunkedLoading: true,
+              chunkInterval: 100,
+              chunkDelay: 25
+            });
+
+            // At high zoom, only show viewport addresses; at low zoom, show more for clusters
+            let visibleAddresses;
+            if (currentZoom >= 15) {
+              // High zoom: only viewport
+              visibleAddresses = getVisibleAddresses(map, allAddresses, 0.2);
+            } else if (currentZoom >= 12) {
+              // Medium zoom: larger buffer
+              visibleAddresses = getVisibleAddresses(map, allAddresses, 0.5);
+            } else {
+              // Low zoom: show all for proper clustering
+              visibleAddresses = allAddresses;
+            }
+
+            visibleAddresses.forEach(address => {
+              const lat = parseFloat(address.latitude);
+              const lng = parseFloat(address.longitude);
+              
+              if (isNaN(lat) || isNaN(lng)) return;
+
+              // Get contact status for this address
+              const addressContacts = allContacts.filter(c => c.addressId === address.id);
+              const status = addressContacts.length > 0 
+                ? addressContacts[0].status 
+                : 'not-contacted';
+
+              const marker = L.marker([lat, lng], {
+                icon: createMarkerIcon(status)
+              });
+
+              // Create popup content
+              const contactCount = addressContacts.length;
+              const popupContent = `
+                <div style="min-width: 150px;">
+                  <strong>${address.streetNumber} ${address.streetName}</strong><br/>
+                  <span style="font-size: 12px; color: #666;">${address.city || 'Toronto'}</span><br/>
+                  <span style="font-size: 12px; margin-top: 4px; display: block;">
+                    ${contactCount > 0 ? `${contactCount} contact${contactCount > 1 ? 's' : ''}` : 'Not contacted'}
+                  </span>
+                  <button 
+                    onclick="window.handleMarkerClick('${address.id}')"
+                    style="
+                      margin-top: 8px;
+                      background: #3b82f6;
+                      color: white;
+                      border: none;
+                      padding: 6px 12px;
+                      border-radius: 4px;
+                      cursor: pointer;
+                      font-size: 12px;
+                      width: 100%;
+                    "
+                  >
+                    ${contactCount > 0 ? 'View Details' : 'Add Contact'}
+                  </button>
+                </div>
+              `;
+
+              marker.bindPopup(popupContent);
+              markers.addLayer(marker);
+            });
+
+            markersLayerRef.current = markers;
+            map.addLayer(markers);
+          };
+
+          // Debounced update function for smooth panning
+          const debouncedUpdate = (map) => {
+            if (updateTimeoutRef.current) {
+              clearTimeout(updateTimeoutRef.current);
+            }
+            updateTimeoutRef.current = setTimeout(() => {
+              updateVisibleMarkers(map);
+            }, 150);
+          };
 
           useEffect(() => {
             if (!mapRef.current || mapInstanceRef.current) return;
@@ -406,7 +532,19 @@
               }).addTo(map).bindPopup('You are here').openPopup();
             });
 
+            // Update markers when map moves or zooms
+            map.on('moveend', function() {
+              debouncedUpdate(map);
+            });
+            
+            map.on('zoomend', function() {
+              debouncedUpdate(map);
+            });
+
             return () => {
+              if (updateTimeoutRef.current) {
+                clearTimeout(updateTimeoutRef.current);
+              }
               if (mapInstanceRef.current) {
                 mapInstanceRef.current.remove();
                 mapInstanceRef.current = null;
@@ -414,90 +552,36 @@
             };
           }, []);
 
+          // Initial load and when addresses/contacts change
           useEffect(() => {
             if (!mapInstanceRef.current || !addresses.length) return;
 
-            // Clear existing markers
-            if (markersLayerRef.current) {
-              mapInstanceRef.current.removeLayer(markersLayerRef.current);
-            }
-
-            // Create marker cluster group
-            const markers = L.markerClusterGroup({
-              maxClusterRadius: 40,
-              spiderfyOnMaxZoom: true,
-              showCoverageOnHover: false,
-              zoomToBoundsOnClick: true,
-              disableClusteringAtZoom: 18
-            });
-
+            const map = mapInstanceRef.current;
+            
+            // Calculate bounds from all addresses for initial view
             const bounds = [];
-
             addresses.forEach(address => {
               if (!address.latitude || !address.longitude) return;
-
               const lat = parseFloat(address.latitude);
               const lng = parseFloat(address.longitude);
-              
-              if (isNaN(lat) || isNaN(lng)) return;
-
-              bounds.push([lat, lng]);
-
-              // Get contact status for this address
-              const addressContacts = contacts.filter(c => c.addressId === address.id);
-              const status = addressContacts.length > 0 
-                ? addressContacts[0].status 
-                : 'not-contacted';
-
-              const marker = L.marker([lat, lng], {
-                icon: createMarkerIcon(status)
-              });
-
-              // Create popup content
-              const contactCount = addressContacts.length;
-              const popupContent = `
-                <div style="min-width: 150px;">
-                  <strong>${address.streetNumber} ${address.streetName}</strong><br/>
-                  <span style="font-size: 12px; color: #666;">${address.city || 'Toronto'}</span><br/>
-                  <span style="font-size: 12px; margin-top: 4px; display: block;">
-                    ${contactCount > 0 ? `${contactCount} contact${contactCount > 1 ? 's' : ''}` : 'Not contacted'}
-                  </span>
-                  <button 
-                    onclick="window.handleMarkerClick('${address.id}')"
-                    style="
-                      margin-top: 8px;
-                      background: #3b82f6;
-                      color: white;
-                      border: none;
-                      padding: 6px 12px;
-                      border-radius: 4px;
-                      cursor: pointer;
-                      font-size: 12px;
-                      width: 100%;
-                    "
-                  >
-                    ${contactCount > 0 ? 'View Details' : 'Add Contact'}
-                  </button>
-                </div>
-              `;
-
-              marker.bindPopup(popupContent);
-              markers.addLayer(marker);
+              if (!isNaN(lat) && !isNaN(lng)) {
+                bounds.push([lat, lng]);
+              }
             });
 
-            markersLayerRef.current = markers;
-            mapInstanceRef.current.addLayer(markers);
-
-            // Fit map to show all markers if we have bounds
-            if (bounds.length > 0) {
-              mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+            // Fit map to show all markers if we have bounds (only on first load)
+            if (bounds.length > 0 && !markersLayerRef.current) {
+              map.fitBounds(bounds, { padding: [50, 50] });
             }
+
+            // Update visible markers
+            updateVisibleMarkers(map);
           }, [addresses, contacts]);
 
           // Make marker click handler available globally
           useEffect(() => {
             window.handleMarkerClick = (addressId) => {
-              const address = addresses.find(a => a.id === addressId);
+              const address = addressesRef.current.find(a => a.id === addressId);
               if (address) {
                 onAddressClick(address);
               }
@@ -506,7 +590,7 @@
             return () => {
               delete window.handleMarkerClick;
             };
-          }, [addresses, onAddressClick]);
+          }, [onAddressClick]);
 
           return <div ref={mapRef} id="map" className="w-full h-full" />;
         };
