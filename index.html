@@ -879,24 +879,20 @@
             if (savedLastLoadTime) setLastLoadTime(savedLastLoadTime);
             if (savedDataSource) setDataSource(savedDataSource);
             
-            // Load addresses from server, then load contacts from Google Sheets
+            // Load addresses from server (contacts will be loaded separately after auth)
             const urlToUse = savedDataUrl || DEFAULT_DATA_URL;
-            loadAddressesFromServer(urlToUse).then(() => {
-              // After addresses load, load contacts from Google Sheets
-              loadContactsFromSheets().then(sheetContacts => {
-                if (sheetContacts.length > 0) {
-                  // We need to wait for addresses to be set, so we'll do matching in another useEffect
-                  console.log(`Loaded ${sheetContacts.length} contacts from Google Sheets`);
-                }
-              });
-            });
+            loadAddressesFromServer(urlToUse);
           }, []);
 
-          // Load contacts from Google Sheets once addresses are loaded
+          // Load contacts from Google Sheets once addresses are loaded AND user is authenticated
           const [sheetsLoaded, setSheetsLoaded] = useState(false);
           
           useEffect(() => {
-            if (addresses.length > 0 && !sheetsLoaded) {
+            // Need addresses, a logged-in user, and a token to load contacts
+            const token = authToken || localStorage.getItem('authToken');
+            
+            if (addresses.length > 0 && currentUser && token && !sheetsLoaded) {
+              console.log('Loading contacts from Google Sheets...');
               loadContactsFromSheets().then(sheetContacts => {
                 if (sheetContacts.length > 0) {
                   const matchedContacts = matchContactsToAddresses(sheetContacts, addresses);
@@ -904,11 +900,16 @@
                     setContacts(matchedContacts);
                     console.log(`Matched ${matchedContacts.length} contacts from Google Sheets`);
                   }
+                } else {
+                  console.log('No contacts found in Google Sheets (or failed to load)');
                 }
+                setSheetsLoaded(true);
+              }).catch(err => {
+                console.error('Error loading contacts:', err);
                 setSheetsLoaded(true);
               });
             }
-          }, [addresses, sheetsLoaded]);
+          }, [addresses, currentUser, authToken, sheetsLoaded]);
 
           // Save contacts to localStorage as backup
           useEffect(() => {
