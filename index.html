@@ -1165,26 +1165,8 @@
             });
           };
 
-          // Check if user can delete a contact
-          const canDeleteContact = (contact) => {
-            // Admins can delete anything
-            if (userRole === 'admin') return true;
-            
-            // Canvassers can only delete their own entries
-            const isOwnEntry = contact.canvasser === currentUser?.name || 
-                               contact.canvasser === currentUser?.email;
-            if (!isOwnEntry) return false;
-            
-            // And only within 24 hours
-            const entryTime = new Date(contact.timestamp);
-            const now = new Date();
-            const hoursSinceEntry = (now - entryTime) / (1000 * 60 * 60);
-            
-            return hoursSinceEntry <= 24;
-          };
-
-          // Delete contact from Google Sheets
-          const deleteContactFromSheets = async (contact) => {
+          // Soft delete contact - marks as deleted in Google Sheets but doesn't remove
+          const softDeleteContact = async (contact) => {
             try {
               const token = authToken || localStorage.getItem('authToken');
               
@@ -1195,17 +1177,16 @@
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                  action: 'delete',
+                  action: 'softDelete',
                   token: token,
                   timestamp: contact.timestamp,
-                  address: contact.address,
-                  canvasser: contact.canvasser
+                  address: contact.address
                 })
               });
-              console.log('Contact deleted from Google Sheets');
+              console.log('Contact marked as deleted in Google Sheets');
               return true;
             } catch (error) {
-              console.error('Error deleting from Google Sheets:', error);
+              console.error('Error soft-deleting from Google Sheets:', error);
               return false;
             }
           };
@@ -1214,21 +1195,11 @@
             const contact = contacts.find(c => c.id === contactId);
             if (!contact) return;
             
-            // Check if user can delete this contact
-            if (!canDeleteContact(contact)) {
-              if (contact.canvasser !== currentUser?.name && contact.canvasser !== currentUser?.email) {
-                alert('You can only delete your own entries.');
-              } else {
-                alert('You can only delete entries from the last 24 hours.');
-              }
-              return;
-            }
-            
             if (confirm('Are you sure you want to delete this contact?')) {
-              // Delete from local state
+              // Remove from local state
               setContacts(contacts.filter(c => c.id !== contactId));
-              // Delete from Google Sheets
-              deleteContactFromSheets(contact);
+              // Mark as deleted in Google Sheets
+              softDeleteContact(contact);
             }
           };
 
@@ -1785,15 +1756,13 @@
                                               </span>
                                             )}
                                           </div>
-                                          {canDeleteContact(contact) && (
-                                            <button
-                                              onClick={() => handleDeleteContact(contact.id)}
-                                              className="text-red-600 hover:text-red-800"
-                                              title="Delete this entry"
-                                            >
-                                              <Trash2 size={16} />
-                                            </button>
-                                          )}
+                                          <button
+                                            onClick={() => handleDeleteContact(contact.id)}
+                                            className="text-red-600 hover:text-red-800"
+                                            title="Delete this entry"
+                                          >
+                                            <Trash2 size={16} />
+                                          </button>
                                         </div>
                                         {contact.issues.length > 0 && (
                                           <div className="flex flex-wrap gap-1 mt-2">
