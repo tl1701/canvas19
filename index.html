@@ -368,13 +368,14 @@
         };
 
         // Map Component with viewport-based rendering for performance
-        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress }) => {
+        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress, savedMapView, onMapViewChange }) => {
           const mapRef = useRef(null);
           const mapInstanceRef = useRef(null);
           const markersLayerRef = useRef(null);
           const addressesRef = useRef([]); // Store addresses for event handlers
           const contactsRef = useRef([]); // Store contacts for event handlers
           const updateTimeoutRef = useRef(null);
+          const initialViewSetRef = useRef(false);
 
           // Keep refs in sync with props
           useEffect(() => {
@@ -502,10 +503,18 @@
           useEffect(() => {
             if (!mapRef.current || mapInstanceRef.current) return;
 
-            // Initialize map centered on Ward 19, Toronto
+            // Beaches-East York (Ward 19) approximate center
+            const BEY_CENTER = [43.6900, -79.3100];
+            const BEY_ZOOM = 13;
+
+            // Use saved position if available, otherwise use BEY defaults
+            const initialCenter = savedMapView?.center || BEY_CENTER;
+            const initialZoom = savedMapView?.zoom || BEY_ZOOM;
+
+            // Initialize map
             const map = L.map(mapRef.current, {
-              center: [43.6532, -79.3832], // Toronto coordinates
-              zoom: 13,
+              center: initialCenter,
+              zoom: initialZoom,
               zoomControl: true
             });
 
@@ -517,8 +526,28 @@
 
             mapInstanceRef.current = map;
 
+            // Save map position when it changes
+            map.on('moveend', function() {
+              if (onMapViewChange) {
+                onMapViewChange({
+                  center: [map.getCenter().lat, map.getCenter().lng],
+                  zoom: map.getZoom()
+                });
+              }
+              debouncedUpdate(map);
+            });
+            
+            map.on('zoomend', function() {
+              if (onMapViewChange) {
+                onMapViewChange({
+                  center: [map.getCenter().lat, map.getCenter().lng],
+                  zoom: map.getZoom()
+                });
+              }
+              debouncedUpdate(map);
+            });
+
             // Fix for map not rendering correctly on initial load
-            // Multiple invalidateSize calls to handle various timing issues
             setTimeout(() => {
               map.invalidateSize();
             }, 100);
@@ -557,15 +586,6 @@
                   iconSize: [12, 12]
                 })
               }).addTo(map).bindPopup('You are here').openPopup();
-            });
-
-            // Update markers when map moves or zooms
-            map.on('moveend', function() {
-              debouncedUpdate(map);
-            });
-            
-            map.on('zoomend', function() {
-              debouncedUpdate(map);
             });
 
             return () => {
@@ -630,6 +650,7 @@
           const [isAuthenticating, setIsAuthenticating] = useState(false);
           const [authToken, setAuthToken] = useState(null); // Google credential token for API calls
           const [view, setView] = useState('map');
+          const [savedMapView, setSavedMapView] = useState(null); // Remember map position when switching tabs
           const [addresses, setAddresses] = useState([]);
           const [contacts, setContacts] = useState([]);
           const [selectedAddress, setSelectedAddress] = useState(null);
@@ -1462,6 +1483,8 @@
                           contacts={contacts}
                           onAddressClick={handleAddressClick}
                           selectedAddress={selectedAddress}
+                          savedMapView={savedMapView}
+                          onMapViewChange={setSavedMapView}
                         />
                         
                         {/* Loading overlay when refreshing */}
