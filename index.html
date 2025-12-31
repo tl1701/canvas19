@@ -9,6 +9,9 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    
     <!-- Leaflet CSS and JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -98,7 +101,13 @@
         // =====================================================
         // GOOGLE SHEETS BACKEND - For saving/loading contacts
         // =====================================================
-        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwrvQUSAkaDVMRyNsvFOOq-5AU8vVo0Mk6g0S5K9Ymn3zeble9rhY0hKZsntdfvF1sB/exec';
+        const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbziTi4LpIHoIG_YPB2X2BJoH5tGKr0j3plBBKgO9Ta4Z12fRUraVGLKA5eWPwghArOa/exec';
+        // =====================================================
+        
+        // =====================================================
+        // GOOGLE AUTHENTICATION
+        // =====================================================
+        const GOOGLE_CLIENT_ID = '1031597597802-poc5rd5remu9k31s68gvcs3quce8bh8g.apps.googleusercontent.com';
         // =====================================================
         
         // Icon components (simplified SVG icons)
@@ -604,8 +613,9 @@
         // Main Canvassing App Component
         const CanvassingApp = () => {
           const [currentUser, setCurrentUser] = useState(null);
-          const [username, setUsername] = useState('');
-          const [password, setPassword] = useState('');
+          const [userRole, setUserRole] = useState(null); // 'admin' or 'canvasser'
+          const [authError, setAuthError] = useState(null);
+          const [isAuthenticating, setIsAuthenticating] = useState(false);
           const [view, setView] = useState('map');
           const [addresses, setAddresses] = useState([]);
           const [contacts, setContacts] = useState([]);
@@ -903,25 +913,124 @@
             }
           }, [contacts]);
 
-          const handleLogin = (e) => {
-            e.preventDefault();
-            if (username && password) {
-              const user = { username, loginTime: new Date().toISOString() };
-              setCurrentUser(user);
-              localStorage.setItem('currentUser', JSON.stringify(user));
+          // Check if user is authorized in the Users sheet
+          const checkUserAuthorization = async (email) => {
+            try {
+              const response = await fetch(`${GOOGLE_SHEETS_URL}?action=checkUser&email=${encodeURIComponent(email)}`);
+              const data = await response.json();
+              return data;
+            } catch (error) {
+              console.error('Error checking user authorization:', error);
+              return { authorized: false, error: error.message };
+            }
+          };
+
+          // Handle Google Sign-In callback
+          const handleGoogleSignIn = async (response) => {
+            setIsAuthenticating(true);
+            setAuthError(null);
+            
+            try {
+              // Decode the JWT token to get user info
+              const payload = JSON.parse(atob(response.credential.split('.')[1]));
+              const email = payload.email;
+              const name = payload.name;
+              const picture = payload.picture;
               
-              // Load data from server on login if not already loaded
-              if (addresses.length === 0) {
-                loadAddressesFromServer();
+              // Check if user is authorized
+              const authResult = await checkUserAuthorization(email);
+              
+              if (authResult.authorized) {
+                const user = {
+                  email: email,
+                  name: name,
+                  picture: picture,
+                  role: authResult.role || 'canvasser',
+                  loginTime: new Date().toISOString()
+                };
+                setCurrentUser(user);
+                setUserRole(authResult.role || 'canvasser');
+                localStorage.setItem('currentUser', JSON.stringify(user));
+                
+                // Load data from server on login if not already loaded
+                if (addresses.length === 0) {
+                  loadAddressesFromServer();
+                }
+              } else {
+                setAuthError(`Sorry, ${email} is not authorized to access this app. Please contact your campaign administrator.`);
               }
+            } catch (error) {
+              console.error('Google Sign-In error:', error);
+              setAuthError('Sign-in failed. Please try again.');
+            } finally {
+              setIsAuthenticating(false);
+            }
+          };
+
+          // Initialize Google Sign-In
+          useEffect(() => {
+            // Check for saved user session
+            const savedUser = localStorage.getItem('currentUser');
+            if (savedUser) {
+              try {
+                const user = JSON.parse(savedUser);
+                // Re-verify the user is still authorized
+                if (user.email) {
+                  checkUserAuthorization(user.email).then(authResult => {
+                    if (authResult.authorized) {
+                      setCurrentUser(user);
+                      setUserRole(authResult.role || user.role || 'canvasser');
+                    } else {
+                      // User is no longer authorized, clear session
+                      localStorage.removeItem('currentUser');
+                    }
+                  });
+                }
+              } catch (e) {
+                localStorage.removeItem('currentUser');
+              }
+            }
+
+            // Initialize Google Sign-In button when the library loads
+            const initializeGoogleSignIn = () => {
+              if (window.google && window.google.accounts) {
+                window.google.accounts.id.initialize({
+                  client_id: GOOGLE_CLIENT_ID,
+                  callback: handleGoogleSignIn
+                });
+              } else {
+                // Retry after a short delay if Google library isn't loaded yet
+                setTimeout(initializeGoogleSignIn, 100);
+              }
+            };
+            
+            initializeGoogleSignIn();
+          }, []);
+
+          // Render Google Sign-In button
+          const renderGoogleButton = (elementId) => {
+            if (window.google && window.google.accounts) {
+              window.google.accounts.id.renderButton(
+                document.getElementById(elementId),
+                { 
+                  theme: 'outline', 
+                  size: 'large',
+                  width: 280,
+                  text: 'signin_with'
+                }
+              );
             }
           };
 
           const handleLogout = () => {
             setCurrentUser(null);
+            setUserRole(null);
+            setAuthError(null);
             localStorage.removeItem('currentUser');
-            setUsername('');
-            setPassword('');
+            // Also sign out of Google
+            if (window.google && window.google.accounts) {
+              window.google.accounts.id.disableAutoSelect();
+            }
           };
 
           const handleFileUpload = (e) => {
@@ -988,7 +1097,7 @@
               address: `${selectedAddress.streetNumber} ${selectedAddress.streetName}`,
               ...contactForm,
               timestamp: new Date().toISOString(),
-              canvasser: currentUser.username
+              canvasser: currentUser.name || currentUser.email
             };
 
             // Save to local state
@@ -1115,34 +1224,39 @@
                     <p className="text-gray-600 mt-2">Toronto Municipal Campaign</p>
                   </div>
                   
-                  <form onSubmit={handleLogin} className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Username</label>
-                      <input
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        required
-                      />
+                  {isAuthenticating ? (
+                    <div className="text-center py-4">
+                      <div className="spinner mx-auto mb-4"></div>
+                      <p className="text-gray-600">Signing you in...</p>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Password</label>
-                      <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        required
-                      />
+                  ) : (
+                    <div className="space-y-4">
+                      <p className="text-center text-gray-600 text-sm mb-4">
+                        Sign in with your Google account to continue
+                      </p>
+                      
+                      <div className="flex justify-center">
+                        <div 
+                          id="google-signin-button"
+                          ref={(el) => {
+                            if (el && !el.hasChildNodes()) {
+                              setTimeout(() => renderGoogleButton('google-signin-button'), 100);
+                            }
+                          }}
+                        ></div>
+                      </div>
+                      
+                      {authError && (
+                        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-red-700 text-sm text-center">{authError}</p>
+                        </div>
+                      )}
+                      
+                      <p className="text-center text-gray-400 text-xs mt-6">
+                        Only authorized campaign volunteers can access this app
+                      </p>
                     </div>
-                    <button
-                      type="submit"
-                      className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
-                    >
-                      Sign In
-                    </button>
-                  </form>
+                  )}
                 </div>
               </div>
             );
@@ -1154,10 +1268,17 @@
               <header className="bg-white shadow-sm border-b flex-shrink-0">
                 <div className="px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <Home size={24} className="text-blue-600" />
+                    {currentUser.picture ? (
+                      <img src={currentUser.picture} alt="" className="w-8 h-8 rounded-full" />
+                    ) : (
+                      <Home size={24} className="text-blue-600" />
+                    )}
                     <div>
                       <h1 className="text-xl font-bold text-gray-800">Ward 19 Canvassing</h1>
-                      <p className="text-xs text-gray-500">Logged in as {currentUser.username}</p>
+                      <p className="text-xs text-gray-500">
+                        {currentUser.name || currentUser.email}
+                        {userRole === 'admin' && <span className="ml-1 text-blue-600">(Admin)</span>}
+                      </p>
                     </div>
                   </div>
                   <button
