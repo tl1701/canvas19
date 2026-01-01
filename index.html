@@ -1495,15 +1495,17 @@
                     <List size={20} />
                     <span className="font-medium">List</span>
                   </button>
-                  <button
-                    onClick={() => setView('stats')}
-                    className={`flex-1 px-4 py-3 flex items-center justify-center space-x-2 ${
-                      view === 'stats' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'
-                    }`}
-                  >
-                    <BarChart3 size={20} />
-                    <span className="font-medium">Stats</span>
-                  </button>
+                  {userRole === 'admin' && (
+                    <button
+                      onClick={() => setView('stats')}
+                      className={`flex-1 px-4 py-3 flex items-center justify-center space-x-2 ${
+                        view === 'stats' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'
+                      }`}
+                    >
+                      <BarChart3 size={20} />
+                      <span className="font-medium">Stats</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setView('guide')}
                     className={`flex-1 px-4 py-3 flex items-center justify-center space-x-2 ${
@@ -1941,7 +1943,7 @@
                   </div>
                 )}
 
-                {view === 'stats' && (
+                {view === 'stats' && userRole === 'admin' && (
                   <div className="h-full overflow-auto custom-scrollbar p-4">
                     <div className="max-w-4xl mx-auto space-y-6">
                       {/* Overview Stats */}
