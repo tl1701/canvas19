@@ -852,42 +852,80 @@
             }
           }, [view, sortBy, userLocation, isLocating]);
 
+          // Write a contact to the pending queue in localStorage
+          const queueContact = (contact, address) => {
+            try {
+              const queue = JSON.parse(localStorage.getItem('pendingSaves') || '[]');
+              queue.push({ contact, address, queuedAt: Date.now() });
+              localStorage.setItem('pendingSaves', JSON.stringify(queue));
+            } catch (e) {
+              console.warn('Could not write to save queue:', e);
+            }
+          };
+
+          // Remove a successfully synced entry from the queue by contact id
+          const dequeueContact = (contactId) => {
+            try {
+              const queue = JSON.parse(localStorage.getItem('pendingSaves') || '[]');
+              const updated = queue.filter(item => item.contact.id !== contactId);
+              localStorage.setItem('pendingSaves', JSON.stringify(updated));
+            } catch (e) {
+              console.warn('Could not update save queue:', e);
+            }
+          };
+
           // Function to save contact to Google Sheets
           const saveContactToSheets = async (contact, address) => {
+            const token = authToken || localStorage.getItem('authToken');
+            const payload = JSON.stringify({
+              action: 'save',
+              token: token,
+              canvasser: contact.canvasser,
+              address: `${address.streetNumber} ${address.streetName}`,
+              unit: contact.unit || '',
+              city: address.city || 'Toronto',
+              status: contact.status,
+              name: contact.name || '',
+              email: contact.email || '',
+              phone: contact.phone || '',
+              supportLevel: contact.supportLevel || '',
+              issues: contact.issues || [],
+              yardSign: contact.yardSign || false,
+              volunteerInterest: contact.volunteerInterest || false,
+              literatureDropped: contact.literatureDropped || false,
+              consented: contact.consented || false,
+              notes: contact.notes || ''
+            });
+
             try {
-              // Get token from state or localStorage
-              const token = authToken || localStorage.getItem('authToken');
-              
               const response = await fetch(GOOGLE_SHEETS_URL, {
                 method: 'POST',
-                mode: 'no-cors', // Required for Google Apps Script
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  action: 'save',
-                  token: token, // Include auth token for verification
-                  canvasser: contact.canvasser,
-                  address: `${address.streetNumber} ${address.streetName}`,
-                  unit: contact.unit || '',
-                  city: address.city || 'Toronto',
-                  status: contact.status,
-                  name: contact.name || '',
-                  email: contact.email || '',
-                  phone: contact.phone || '',
-                  supportLevel: contact.supportLevel || '',
-                  issues: contact.issues || [],
-                  yardSign: contact.yardSign || false,
-                  volunteerInterest: contact.volunteerInterest || false,
-                  literatureDropped: contact.literatureDropped || false,
-                  consented: contact.consented || false,
-                  notes: contact.notes || ''
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: payload
               });
-              console.log('Contact saved to Google Sheets');
-              return true;
+              const result = await response.json();
+              if (result.success) {
+                dequeueContact(contact.id);
+                console.log('Contact saved to Google Sheets');
+                return true;
+              } else {
+                console.error('Google Sheets save failed:', result.error);
+                return false;
+              }
             } catch (error) {
-              console.error('Error saving to Google Sheets:', error);
+              // CORS or network error — fall back to no-cors fire-and-forget
+              // Entry stays in queue and will be retried on next load
+              console.warn('Direct fetch failed, falling back to no-cors (entry remains queued):', error);
+              try {
+                await fetch(GOOGLE_SHEETS_URL, {
+                  method: 'POST',
+                  mode: 'no-cors',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: payload
+                });
+              } catch (e) {
+                console.error('Fallback no-cors fetch also failed:', e);
+              }
               return false;
             }
           };
@@ -1015,10 +1053,26 @@
           useEffect(() => {
             // Need addresses, a logged-in user, and a token to load contacts
             const token = authToken || localStorage.getItem('authToken');
-            
+
             if (addresses.length > 0 && currentUser && token && !sheetsLoaded) {
               console.log('Loading contacts from Google Sheets...');
-              loadContactsFromSheets().then(sheetContacts => {
+
+              // Replay any contacts that were queued but not yet confirmed saved
+              const replayQueue = async () => {
+                try {
+                  const queue = JSON.parse(localStorage.getItem('pendingSaves') || '[]');
+                  if (queue.length > 0) {
+                    console.log(`Replaying ${queue.length} unsaved contact(s) from queue...`);
+                    for (const item of queue) {
+                      await saveContactToSheets(item.contact, item.address);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Error replaying save queue:', e);
+                }
+              };
+
+              replayQueue().then(() => loadContactsFromSheets()).then(sheetContacts => {
                 if (sheetContacts.length > 0) {
                   const matchedContacts = matchContactsToAddresses(sheetContacts, addresses);
                   if (matchedContacts.length > 0) {
@@ -1248,10 +1302,13 @@
               canvasser: currentUser.name || currentUser.email
             };
 
+            // Queue immediately so a reload before the network call completes won't lose data
+            queueContact(newContact, selectedAddress);
+
             // Save to local state
             setContacts([...contacts, newContact]);
-            
-            // Also save to Google Sheets
+
+            // Save to Google Sheets (on success, dequeues automatically)
             saveContactToSheets(newContact, selectedAddress);
             
             setShowContactForm(false);
