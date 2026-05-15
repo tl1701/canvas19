@@ -373,7 +373,7 @@
         };
 
         // Map Component with viewport-based rendering for performance
-        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress, savedMapView, onMapViewChange, onViewInList, onPopupChange }) => {
+        const MapView = ({ addresses, contacts, onAddressClick, selectedAddress, savedMapView, onMapViewChange, onViewInList, onPopupChange, userRole }) => {
           const mapRef = useRef(null);
           const mapInstanceRef = useRef(null);
           const markersLayerRef = useRef(null);
@@ -381,6 +381,7 @@
           const contactsRef = useRef([]); // Store contacts for event handlers
           const updateTimeoutRef = useRef(null);
           const initialViewSetRef = useRef(false);
+          const userRoleRef = useRef(userRole);
 
           // Keep refs in sync with props
           useEffect(() => {
@@ -390,6 +391,10 @@
           useEffect(() => {
             contactsRef.current = contacts;
           }, [contacts]);
+
+          useEffect(() => {
+            userRoleRef.current = userRole;
+          }, [userRole]);
 
           // Function to get addresses within current viewport
           const getVisibleAddresses = (map, allAddresses, buffer = 0.1) => {
@@ -473,23 +478,25 @@
               };
               
               // Build contact details HTML
+              const isAdmin = userRoleRef.current === 'admin';
               let contactDetailsHtml = '';
               if (latestContact) {
                 const supportColor = supportColors[latestContact.supportLevel] || '#9ca3af';
-                const supportLabel = latestContact.supportLevel 
+                const supportLabel = latestContact.supportLevel
                   ? latestContact.supportLevel.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
                   : '';
-                
+                const firstName = latestContact.name ? latestContact.name.split(' ')[0] : '';
+
                 contactDetailsHtml = `
-                  ${latestContact.name ? `<div style="font-weight: 600; margin-top: 8px;">${latestContact.name}</div>` : ''}
-                  ${supportLabel ? `
+                  ${latestContact.name ? `<div style="font-weight: 600; margin-top: 8px;">${isAdmin ? latestContact.name : firstName}</div>` : ''}
+                  ${isAdmin && supportLabel ? `
                     <div style="display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 12px; font-size: 11px; color: white; background: ${supportColor};">
                       ${supportLabel}
                     </div>
                   ` : ''}
                   ${latestContact.issues && latestContact.issues.length > 0 ? `
                     <div style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;">
-                      ${latestContact.issues.slice(0, 4).map(issue => 
+                      ${latestContact.issues.slice(0, 4).map(issue =>
                         `<span style="background: #dbeafe; color: #1d4ed8; padding: 2px 6px; border-radius: 8px; font-size: 10px;">${issue}</span>`
                       ).join('')}
                       ${latestContact.issues.length > 4 ? `<span style="font-size: 10px; color: #666;">+${latestContact.issues.length - 4} more</span>` : ''}
@@ -500,7 +507,7 @@
                       "${latestContact.notes.length > 80 ? latestContact.notes.substring(0, 80) + '...' : latestContact.notes}"
                     </div>
                   ` : ''}
-                  ${contactCount > 1 ? `<div style="font-size: 10px; color: #666; margin-top: 4px;">+ ${contactCount - 1} more contact${contactCount > 2 ? 's' : ''}</div>` : ''}
+                  ${isAdmin && contactCount > 1 ? `<div style="font-size: 10px; color: #666; margin-top: 4px;">+ ${contactCount - 1} more contact${contactCount > 2 ? 's' : ''}</div>` : ''}
                 `;
               }
               
@@ -1696,6 +1703,7 @@
                           }
                         }}
                         onPopupChange={setIsPopupOpen}
+                        userRole={userRole}
                       />
                       
                       {/* Loading overlay when refreshing */}
@@ -2083,8 +2091,8 @@
                                         <div className="flex justify-between items-start mb-2">
                                           <div>
                                             {contact.unit && <p className="text-xs text-blue-600 font-medium">Unit {contact.unit}</p>}
-                                            {contact.name && <p className="font-medium">{contact.name}</p>}
-                                            {contact.supportLevel && (
+                                            {contact.name && <p className="font-medium">{userRole === 'admin' ? contact.name : contact.name.split(' ')[0]}</p>}
+                                            {userRole === 'admin' && contact.supportLevel && (
                                               <span className="text-xs text-gray-600">
                                                 {contact.supportLevel.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                                               </span>
@@ -2424,7 +2432,7 @@
                                 <div key={contact.id} className="text-sm bg-white p-3 rounded border">
                                   <div className="flex justify-between">
                                     <span className="font-medium">
-                                      {contact.unit ? `Unit ${contact.unit} - ` : ''}{contact.name || 'No name'}
+                                      {contact.unit ? `Unit ${contact.unit} - ` : ''}{contact.name ? (userRole === 'admin' ? contact.name : contact.name.split(' ')[0]) : 'No name'}
                                     </span>
                                     <span className="text-gray-500">{contact.status.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</span>
                                   </div>
