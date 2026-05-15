@@ -770,6 +770,7 @@
             yardSign: false,
             volunteerInterest: false,
             literatureDropped: false,
+            willDonate: false,
             literatureType: '',
             consented: false,
             status: ''
@@ -959,9 +960,11 @@
               yardSign: contact.yardSign || false,
               volunteerInterest: contact.volunteerInterest || false,
               literatureDropped: contact.literatureDropped || false,
+              willDonate: contact.willDonate || false,
               consented: contact.consented || false,
               notes: contact.notes || '',
-              visitedByTycen: contact.visitedByTycen || false
+              visitedByTycen: contact.visitedByTycen || false,
+              willDonate: contact.willDonate || false
             });
 
             try {
@@ -1024,6 +1027,7 @@
                   yardSign: row.YardSign === 'Yes',
                   volunteerInterest: row.Volunteer === 'Yes',
                   literatureDropped: row.Literature === 'Yes',
+                  willDonate: row.WillDonate === 'Yes',
                   consented: row.Consented === 'Yes',
                   notes: row.Notes || '',
                   visitedByTycen: row.VisitedByTycen === 'Yes',
@@ -2316,7 +2320,7 @@
                       {/* Engagement Metrics */}
                       <div className="bg-white rounded-lg shadow-sm p-6">
                         <h2 className="text-xl font-bold mb-4">Engagement Metrics</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           <div className="text-center p-4 bg-purple-50 rounded-lg">
                             <div className="text-3xl font-bold text-purple-600">
                               {contacts.filter(c => c.yardSign).length}
@@ -2328,6 +2332,12 @@
                               {contacts.filter(c => c.volunteerInterest).length}
                             </div>
                             <div className="text-sm text-gray-600">Volunteer Interest</div>
+                          </div>
+                          <div className="text-center p-4 bg-green-50 rounded-lg">
+                            <div className="text-3xl font-bold text-green-600">
+                              {contacts.filter(c => c.willDonate).length}
+                            </div>
+                            <div className="text-sm text-gray-600">Will Donate</div>
                           </div>
                           <div className="text-center p-4 bg-teal-50 rounded-lg">
                             <div className="text-3xl font-bold text-teal-600">
@@ -2645,6 +2655,15 @@
                                 />
                                 <span className="text-sm">Literature dropped</span>
                               </label>
+                              <label className="flex items-center space-x-3">
+                                <input
+                                  type="checkbox"
+                                  checked={contactForm.willDonate}
+                                  onChange={(e) => setContactForm({...contactForm, willDonate: e.target.checked})}
+                                  className="w-4 h-4"
+                                />
+                                <span className="text-sm">Will donate</span>
+                              </label>
                             </div>
 
                             <textarea
@@ -2655,15 +2674,6 @@
                               className="w-full px-3 py-2 border rounded-lg"
                             />
 
-                            <label className="flex items-center space-x-3">
-                              <input
-                                type="checkbox"
-                                checked={contactForm.consented}
-                                onChange={(e) => setContactForm({...contactForm, consented: e.target.checked})}
-                                className="w-4 h-4"
-                              />
-                              <span className="text-sm">Consented to contact (PIPEDA)</span>
-                            </label>
                           </>
                         )}
                       </div>
