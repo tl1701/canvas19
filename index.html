@@ -1766,8 +1766,8 @@
                         </div>
                       )}
                       
-                      {/* Nearby Addresses Panel - positioned below zoom controls */}
-                      <div className="absolute top-20 left-4 z-[1000]" style={{maxWidth: '280px'}}>
+                      {/* Nearby Addresses Panel - positioned below zoom controls, hidden when popup is open */}
+                      <div className="absolute top-20 left-4 z-[1000]" style={{maxWidth: '280px', visibility: isPopupOpen ? 'hidden' : 'visible'}}>
                           {!userLocation ? (
                             <button
                               onClick={startLocationTracking}
@@ -1837,8 +1837,8 @@
                           )}
                         </div>
                         
-                        {/* Filter Panel Button */}
-                        <div className="absolute top-4 left-4 z-[1000]">
+                        {/* Filter Panel Button - hidden when popup is open */}
+                        <div className="absolute top-4 left-4 z-[1000]" style={{visibility: isPopupOpen ? 'hidden' : 'visible'}}>
                           <button
                             onClick={() => setShowFilterPanel(p => !p)}
                             className="bg-white shadow-lg rounded-lg px-3 py-2 text-sm font-semibold flex items-center space-x-2 border border-gray-200"
