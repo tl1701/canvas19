@@ -1516,23 +1516,30 @@
             return filtered;
           };
 
-          const stats = {
-            total: addresses.length,
-            contacted: addresses.filter(a => getAddressStatus(a.id) === 'contacted').length,
-            notHome: addresses.filter(a => getAddressStatus(a.id) === 'not-home').length,
-            refused: addresses.filter(a => getAddressStatus(a.id) === 'refused').length,
-            business: addresses.filter(a => getAddressStatus(a.id) === 'business').length,
-            notApplicable: addresses.filter(a => getAddressStatus(a.id) === 'not-applicable').length,
-            notContacted: addresses.filter(a => getAddressStatus(a.id) === 'not-contacted').length,
-          };
+          const stats = useMemo(() => {
+            const statusByAddress = new Map();
+            contacts.forEach(c => {
+              if (!statusByAddress.has(c.addressId)) statusByAddress.set(c.addressId, c.status);
+            });
+            const getStatus = addr => statusByAddress.get(addr.id) || 'not-contacted';
+            return {
+              total: addresses.length,
+              contacted: addresses.filter(a => getStatus(a) === 'contacted').length,
+              notHome: addresses.filter(a => getStatus(a) === 'not-home').length,
+              refused: addresses.filter(a => getStatus(a) === 'refused').length,
+              business: addresses.filter(a => getStatus(a) === 'business').length,
+              notApplicable: addresses.filter(a => getStatus(a) === 'not-applicable').length,
+              notContacted: addresses.filter(a => getStatus(a) === 'not-contacted').length,
+            };
+          }, [addresses, contacts]);
 
-          const supportStats = {
+          const supportStats = useMemo(() => ({
             strongSupport: contacts.filter(c => c.supportLevel === 'strong-support').length,
             leaningSupport: contacts.filter(c => c.supportLevel === 'leaning-support').length,
             undecided: contacts.filter(c => c.supportLevel === 'undecided').length,
             leaningAgainst: contacts.filter(c => c.supportLevel === 'leaning-against').length,
             strongAgainst: contacts.filter(c => c.supportLevel === 'strong-against').length,
-          };
+          }), [contacts]);
 
           if (!currentUser) {
             return (
