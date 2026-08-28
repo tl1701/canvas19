@@ -2541,6 +2541,24 @@
                           </div>
                         </div>
 
+                        <label className="flex items-center space-x-3">
+                          <input
+                            type="checkbox"
+                            checked={contactForm.literatureDropped}
+                            onChange={(e) => setContactForm({...contactForm, literatureDropped: e.target.checked})}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm">Literature dropped</span>
+                        </label>
+
+                        <textarea
+                          value={contactForm.notes}
+                          onChange={(e) => setContactForm({...contactForm, notes: e.target.value})}
+                          placeholder="Notes..."
+                          rows="3"
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+
                         {contactForm.status === 'contacted' && (
                           <>
                             <div className="grid grid-cols-2 gap-4">
@@ -2649,15 +2667,6 @@
                               <label className="flex items-center space-x-3">
                                 <input
                                   type="checkbox"
-                                  checked={contactForm.literatureDropped}
-                                  onChange={(e) => setContactForm({...contactForm, literatureDropped: e.target.checked})}
-                                  className="w-4 h-4"
-                                />
-                                <span className="text-sm">Literature dropped</span>
-                              </label>
-                              <label className="flex items-center space-x-3">
-                                <input
-                                  type="checkbox"
                                   checked={contactForm.willDonate}
                                   onChange={(e) => setContactForm({...contactForm, willDonate: e.target.checked})}
                                   className="w-4 h-4"
@@ -2665,15 +2674,6 @@
                                 <span className="text-sm">Will donate</span>
                               </label>
                             </div>
-
-                            <textarea
-                              value={contactForm.notes}
-                              onChange={(e) => setContactForm({...contactForm, notes: e.target.value})}
-                              placeholder="Notes..."
-                              rows="3"
-                              className="w-full px-3 py-2 border rounded-lg"
-                            />
-
                           </>
                         )}
                       </div>
