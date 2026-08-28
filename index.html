@@ -382,6 +382,7 @@
           const updateTimeoutRef = useRef(null);
           const initialViewSetRef = useRef(false);
           const userRoleRef = useRef(userRole);
+          const popupOpenRef = useRef(false);
 
           // Keep refs in sync with props
           useEffect(() => {
@@ -567,6 +568,7 @@
               clearTimeout(updateTimeoutRef.current);
             }
             updateTimeoutRef.current = setTimeout(() => {
+              if (popupOpenRef.current) return; // don't rebuild markers while a popup is open, or it gets destroyed
               updateVisibleMarkers(map);
             }, 150);
           };
@@ -660,11 +662,14 @@
               }).addTo(map).bindPopup('You are here').openPopup();
             });
 
-            // Track popup open/close to hide legend
+            // Track popup open/close to hide legend, and to avoid rebuilding markers out from under an open popup
             map.on('popupopen', function() {
+              popupOpenRef.current = true;
               if (onPopupChange) onPopupChange(true);
             });
             map.on('popupclose', function() {
+              popupOpenRef.current = false;
+              debouncedUpdate(map); // catch up on any rebuild we skipped while the popup was open
               if (onPopupChange) onPopupChange(false);
             });
 
